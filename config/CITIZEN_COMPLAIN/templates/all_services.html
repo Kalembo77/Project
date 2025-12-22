@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+{% load static %}
+<head>
+    <meta charset="UTF-8">
+    <title>All Services | Citizen Complaint System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="{% url 'home' %}">Citizen Complaint System</a>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item"><a class="nav-link" href="{% url 'home' %}">Home</a></li>
+                <li class="nav-item"><a class="nav-link active" href="#">All Services</a></li>
+                <li class="nav-item"><a class="nav-link" href="{% url 'contact' %}">Contact</a></li>
+            </ul>
+        </div>
+    </div>
+</nav>
+<section class="container my-5">
+    <h2 class="text-center mb-4">All Services Provided</h2>
+    <div class="row g-4">
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm p-4">
+                <div class="feature-icon mb-3"><i class="bi bi-pencil-square"></i></div>
+                <h5>Submit Complaints</h5>
+                <p>Submit complaints about public services, infrastructure, and governance issues.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm p-4">
+                <div class="feature-icon mb-3"><i class="bi bi-graph-up-arrow"></i></div>
+                <h5>Track Status</h5>
+                <p>Track the progress and resolution status of your complaints in real time.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm p-4">
+                <div class="feature-icon mb-3"><i class="bi bi-shield-check"></i></div>
+                <h5>Transparency</h5>
+                <p>Promotes accountability and transparency between citizens and authorities.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm p-4">
+                <div class="feature-icon mb-3"><i class="bi bi-person-lines-fill"></i></div>
+                <h5>Profile Management</h5>
+                <p>Manage your profile and view your complaint history.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm p-4">
+                <div class="feature-icon mb-3"><i class="bi bi-envelope-paper"></i></div>
+                <h5>Admin Feedback</h5>
+                <p>Receive feedback and updates from administrators regarding your complaints.</p>
+            </div>
+        </div>
+    </div>
+</section>
+<footer class="bg-primary text-white text-center p-3">
+    <p class="mb-0">&copy; 2025 Citizen Complaint System | Empowering Citizens Through Technology</p>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
