@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-emnzos+neef)wr1x*h3wjvyr39y$w2bcg2iq^zl2!36ucj1t3c
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['PACKSENSI123.pythonanywhere.com', '127.0.0.1', 'localhost']
 
 
 # Application definition
@@ -122,4 +122,10 @@ STATIC_URL = '/static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_ROOT = str(BASE_DIR / 'staticfiles')
+
+# Debug: print STATIC_ROOT and BASE_DIR to stderr
+import sys
+print("STATIC_ROOT:", repr(STATIC_ROOT), file=sys.stderr)
+print("BASE_DIR:", repr(BASE_DIR), file=sys.stderr)
+print("STATIC_ROOT:", STATIC_ROOT)
