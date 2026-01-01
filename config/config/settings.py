@@ -10,9 +10,12 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -25,7 +28,7 @@ SECRET_KEY = 'django-insecure-emnzos+neef)wr1x*h3wjvyr39y$w2bcg2iq^zl2!36ucj1t3c
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['PACKSENSI123.pythonanywhere.com', '127.0.0.1', 'localhost']
 
 
 # Application definition
@@ -120,3 +123,6 @@ STATIC_URL = '/static/'
 # Media files (user uploaded content)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
