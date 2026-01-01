@@ -60,19 +60,46 @@ def register(request):
         password = request.POST.get('password', '')
         confirm = request.POST.get('confirm_password', '')
 
+        # Check required fields
         if not fullname or not email or not contact or not password:
             return render(request, 'register.html', {
                 'error': 'Please fill in all required fields.'
             })
 
+        # Check password match
         if password != confirm:
             return render(request, 'register.html', {
                 'error': 'Passwords do not match.'
             })
 
+        # Check for duplicate email
         if RegisteredUser.objects.filter(email=email).exists():
             return render(request, 'register.html', {
                 'error': 'Email already registered.'
+            })
+
+        # Check for duplicate username (fullname as username)
+        if RegisteredUser.objects.filter(fullname=fullname).exists():
+            return render(request, 'register.html', {
+                'error': 'Username already taken.'
+            })
+
+        # Strong password validation
+        import re
+        password_errors = []
+        if len(password) < 8:
+            password_errors.append('Password must be at least 8 characters long.')
+        if not re.search(r'[A-Z]', password):
+            password_errors.append('Password must contain at least one uppercase letter.')
+        if not re.search(r'[a-z]', password):
+            password_errors.append('Password must contain at least one lowercase letter.')
+        if not re.search(r'[0-9]', password):
+            password_errors.append('Password must contain at least one digit.')
+        if not re.search(r'[^A-Za-z0-9]', password):
+            password_errors.append('Password must contain at least one special character.')
+        if password_errors:
+            return render(request, 'register.html', {
+                'error': ' '.join(password_errors)
             })
 
         user = RegisteredUser.objects.create(
