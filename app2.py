@@ -4,7 +4,8 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
-from tensorflow.keras.models import load_model
+#from tensorflow.keras.models import load_model
+from keras.models import load_model
 import os
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -403,7 +404,8 @@ features = df[[
 scaler = joblib.load("models/scaler.pkl")
 scaled = scaler.transform(features)
 
-model = load_model("models/stock_model.keras", compile=False)
+#model = load_model("models/stock_model.keras", compile=False)
+model = load_model("models/stock_model.keras")
 
 # =========================
 # TIME OPTIONS
