@@ -1,0 +1,27 @@
+https://www.crdbbank.co.tz/en/investor-relations/shareholder-information
+
+
+
+Which model did you use and why?
+
+Unaweza kujibu hivi:
+
+I used the Long Short-Term Memory (LSTM) deep learning model because stock market data is time-series data, where future prices depend on previous prices. LSTM is designed to learn long-term patterns and dependencies from sequential data, making it more suitable than traditional machine learning models for stock price forecasting.
+
+Kisha unaweza kufafanua kwa pointi:
+
+Model Used
+
+Long Short-Term Memory (LSTM)
+
+Why LSTM?
+It is suitable for time-series data.
+Stock prices are recorded over time, so the order of the data is important.
+It remembers historical information.
+LSTM can learn patterns from previous days (for example, the last 60 trading days) to predict future prices.
+It handles long-term dependencies.
+It can capture trends that occurred many days earlier, unlike a standard Neural Network.
+It provides better forecasting accuracy.
+Compared with traditional models such as Linear Regression, LSTM generally performs better on nonlinear financial data.
+It supports decision making.
+The predicted prices are used together with technical indicators (such as RSI, MACD, Moving Averages, and Volatility) to generate Buy, Sell, or Hold recommendations.
