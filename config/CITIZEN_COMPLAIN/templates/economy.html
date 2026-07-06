@@ -1,0 +1,63 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Economy Complaint | Citizen Complaint System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body { background-color: #f4f6f9; }
+        .hero { background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)),
+                 url("{% static 'images/economy.jpg' %}") center/cover no-repeat;
+                 color: white; padding: 60px 30px; border-radius: 12px; text-align:center; margin-bottom: 30px; }
+        .card { border-radius: 12px; }
+    </style>
+</head>
+<body>
+
+<div class="container mt-5">
+
+    <div class="hero shadow">
+        <h2 class="fw-bold">Economy Complaint Form</h2>
+        <p class="lead mb-0">Submit your Economy-related complaint.</p>
+    </div>
+
+    <div class="card shadow p-4">
+        <form method="post">
+            {% csrf_token %}
+
+            <div class="mb-3">
+                <label class="form-label fw-bold">Title / Subject</label>
+                <input type="text" name="title" class="form-control form-control-lg" placeholder="Enter complaint title" required>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-bold">Description</label>
+                <textarea name="description" class="form-control form-control-lg" rows="5" placeholder="Enter detailed description" required></textarea>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-bold">Location / Address</label>
+                 <input type="text" name="location" class="form-control form-control-lg" placeholder="e.g. Dar es Salaam, Ilala, Gerezani, Uhuru Street" required>
+                 <label for="location" class="form-label">Region, District, Ward and Street</label>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-bold">Contact Info</label>
+                <input type="text" name="contact" class="form-control form-control-lg" placeholder="Enter your contact info" required>
+            </div>
+
+            <div class="d-grid">
+                <button type="submit" class="btn btn-success btn-lg">Submit Complaint</button>
+            </div>
+        </form>
+    </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
