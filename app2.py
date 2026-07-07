@@ -5,9 +5,12 @@ import joblib
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 #from tensorflow.keras.models import load_model
-from keras.models import load_model
+#from keras.models import load_model
+try:
+    import onnxruntime as ort
+except Exception:  # ImportError or module not found
+    ort = None
 import os
-
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # =========================
@@ -405,7 +408,12 @@ scaler = joblib.load("models/scaler.pkl")
 scaled = scaler.transform(features)
 
 #model = load_model("models/stock_model.keras", compile=False)
-model = load_model("models/stock_model.keras")
+#model = load_model("models/stock_model.keras")
+model_path = "models/stock_model.onnx"
+
+session = ort.InferenceSession(
+    model_path
+)
 
 # =========================
 # TIME OPTIONS
@@ -431,12 +439,22 @@ def predict_future(days, data):
 
         x = seq.reshape(1, 60, data.shape[1])
 
-        pred = model.predict(x, verbose=0)[0][0]
+       # pred = model.predict(x, verbose=0)[0][0]
+        input_name = session.get_inputs()[0].name
 
+        prediction = session.run(
+            None,
+            {
+                input_name: x.astype(np.float32)
+            }
+        )[0]
         last_close = seq[-1][close_id]
 
         # AI prediction
+        #ai_change = pred * 0.0015
+        pred = float(prediction[0][0])
         ai_change = pred * 0.0015
+
 
         # Small random market movement
         market_noise = np.random.normal(0, 0.0008)
