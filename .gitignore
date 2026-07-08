@@ -22,3 +22,4 @@ env/
 *.egg-info/
 staticfiles/
 node_modules/
+firebase_key.json
