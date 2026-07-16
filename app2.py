@@ -4,8 +4,15 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
-#from tensorflow.keras.models import load_model
-#from keras.models import load_model
+
+try:
+    from tensorflow.keras.models import load_model as keras_load_model
+except Exception:
+    try:
+        from keras.models import load_model as keras_load_model
+    except Exception:
+        keras_load_model = None
+
 try:
     import onnxruntime as ort
 except Exception:  # ImportError or module not found
@@ -407,13 +414,26 @@ features = df[[
 scaler = joblib.load("models/scaler.pkl")
 scaled = scaler.transform(features)
 
-#model = load_model("models/stock_model.keras", compile=False)
-#model = load_model("models/stock_model.keras")
 model_path = "models/stock_model.onnx"
+keras_model_path = "models/stock_model.keras"
 
-session = ort.InferenceSession(
-    model_path
-)
+session = None
+keras_model = None
+
+if ort is not None:
+    try:
+        session = ort.InferenceSession(model_path)
+    except Exception as e:
+        st.warning(f"Could not load ONNX model: {e}")
+
+if session is None and keras_load_model is not None:
+    try:
+        keras_model = keras_load_model(keras_model_path, compile=False)
+    except Exception as e:
+        st.warning(f"Could not load Keras model: {e}")
+
+if session is None and keras_model is None:
+    st.error("No model available. Install onnxruntime or add models/stock_model.keras.")
 
 # =========================
 # TIME OPTIONS
@@ -440,19 +460,22 @@ def predict_future(days, data):
         x = seq.reshape(1, 60, data.shape[1])
 
        # pred = model.predict(x, verbose=0)[0][0]
-        input_name = session.get_inputs()[0].name
-
-        prediction = session.run(
-            None,
-            {
-                input_name: x.astype(np.float32)
-            }
-        )[0]
         last_close = seq[-1][close_id]
 
-        # AI prediction
-        #ai_change = pred * 0.0015
-        pred = float(prediction[0][0])
+        if session is not None:
+            input_name = session.get_inputs()[0].name
+            prediction = session.run(
+                None,
+                {
+                    input_name: x.astype(np.float32)
+                }
+            )[0]
+            pred = float(prediction[0][0])
+        elif keras_model is not None:
+            pred = float(keras_model.predict(x, verbose=0)[0][0])
+        else:
+            raise RuntimeError("No prediction model available.")
+
         ai_change = pred * 0.0015
 
 
@@ -604,15 +627,31 @@ if st.button("🚀 RUN PREDICTION"):
     now = datetime.now()
     base_date = now.date()
     forecast_offset = timedelta(minutes=35)
+    incremental_offset = timedelta(minutes=15)
 
     if period == "Today":
-        forecast_time = now + forecast_offset
+        forecast_times = [now + forecast_offset]
     elif period == "Tomorrow":
-        forecast_time = datetime.combine(base_date + timedelta(days=1), now.time()) + forecast_offset
+        forecast_times = [datetime.combine(base_date + timedelta(days=1), now.time()) + forecast_offset]
     elif period == "Next Week":
-        forecast_time = datetime.combine(base_date + timedelta(days=7), now.time()) + forecast_offset
+        forecast_times = [
+            datetime.combine(base_date + timedelta(days=i + 1), now.time()) + forecast_offset + incremental_offset * i
+            for i in range(7)
+        ]
     else:
-        forecast_time = datetime.combine(base_date + timedelta(days=30), now.time()) + forecast_offset
+        forecast_times = [
+            datetime.combine(base_date + timedelta(days=i + 1), now.time()) + forecast_offset + incremental_offset * i
+            for i in range(30)
+        ]
+
+    forecast_time = forecast_times[-1]
+    if len(forecast_times) == 1:
+        forecast_range_text = forecast_times[0].strftime('%d %B %Y %H:%M')
+    else:
+        forecast_range_text = (
+            f"{forecast_times[0].strftime('%d %B %Y %H:%M')} to "
+            f"{forecast_times[-1].strftime('%d %B %Y %H:%M')}"
+        )
 
     # =========================
     # UI
@@ -636,10 +675,35 @@ if st.button("🚀 RUN PREDICTION"):
         st.markdown("<div class='metric-container'>📊<strong> Signal</strong><br>" + f"{signal}</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='result-section'>" +
-                f"<p>🕒 TIME: {now.strftime('%d %B %Y %H:%M:%S')}</p>" +
-                f"<p>📅 FORECAST: {forecast_time.strftime('%d %B %Y %H:%M:%S')}</p>" +
+                f"<p>🕒 TIME: {now.strftime('%d %B %Y %H:%M')}</p>" +
+                f"<p>📅 FORECAST: {forecast_time.strftime('%d %B %Y %H:%M')}</p>" +
                 f"<p>📈 CHANGE: {change:.2f}%</p>" +
                 "</div>", unsafe_allow_html=True)
+
+    future_prices = []
+    for p in predictions:
+        temp = np.zeros((1, scaled.shape[1]))
+        temp[0, close_id] = p
+        future_prices.append(scaler.inverse_transform(temp)[0][close_id])
+
+    recommendations = []
+    for price in future_prices:
+        diff_pct = (price - current_price) / current_price * 100
+        if abs(diff_pct) <= 0.1:
+            recommendations.append("HOLD: wait for clearer movement")
+        elif diff_pct > 0:
+            recommendations.append("BUY: price is trending higher")
+        else:
+            recommendations.append("SELL: price is trending lower")
+
+    schedule_df = pd.DataFrame({
+        "Prediction #": list(range(1, len(forecast_times) + 1)),
+        "Forecast Time": [t.strftime('%d %b %Y %H:%M') for t in forecast_times[:len(predictions)]],
+        "Predicted Price": [f"{p:.2f}" for p in future_prices],
+        "Recommendation": recommendations
+    })
+    st.markdown("<div class='table-panel'><h3 style='margin-top:0;'>📅 Forecast Schedule</h3></div>", unsafe_allow_html=True)
+    st.table(schedule_df)
 
     st.markdown(f"[🔗 OPEN MARKET]({dse_links.get(stock)})")
 
@@ -652,16 +716,7 @@ if st.button("🚀 RUN PREDICTION"):
 
     ax.plot(df.tail(100).Date, df.tail(100).Close, label="CURRENT")
 
-    future_prices = []
-    for p in predictions:
-        temp = np.zeros((1, scaled.shape[1]))
-        temp[0, close_id] = p
-        future_prices.append(scaler.inverse_transform(temp)[0][close_id])
-
-    future_dates = [
-        forecast_time + timedelta(minutes=60*i)
-        for i in range(len(predictions))
-    ]
+    future_dates = forecast_times[:len(predictions)]
 
     ax.plot(future_dates, future_prices, marker="o", label="FORECAST")
 
