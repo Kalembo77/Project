@@ -632,7 +632,9 @@ if st.button("🚀 RUN PREDICTION"):
     if period == "Today":
         forecast_times = [now + forecast_offset]
     elif period == "Tomorrow":
-        forecast_times = [datetime.combine(base_date + timedelta(days=1), now.time()) + forecast_offset]
+        forecast_times = [
+            datetime.combine(base_date + timedelta(days=1), now.time()) + forecast_offset
+        ]
     elif period == "Next Week":
         forecast_times = [
             datetime.combine(base_date + timedelta(days=i + 1), now.time()) + forecast_offset + incremental_offset * i
@@ -675,8 +677,8 @@ if st.button("🚀 RUN PREDICTION"):
         st.markdown("<div class='metric-container'>📊<strong> Signal</strong><br>" + f"{signal}</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='result-section'>" +
-                f"<p>🕒 TIME: {now.strftime('%d %B %Y %H:%M')}</p>" +
-                f"<p>📅 FORECAST: {forecast_time.strftime('%d %B %Y %H:%M')}</p>" +
+                f"<p>🕒 CURRENT TIME: {now.strftime('%d %B %Y %H:%M')}</p>" +
+                f"<p>📅 FORECAST TIME: {forecast_time.strftime('%d %B %Y %H:%M')}</p>" +
                 f"<p>📈 CHANGE: {change:.2f}%</p>" +
                 "</div>", unsafe_allow_html=True)
 
