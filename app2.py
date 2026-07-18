@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
 try:
@@ -26,341 +27,525 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 #st.set_page_config(page_title="CRDB STOCK MARKET PREDICTOR", layout="wide")
 
 st.set_page_config(
-    page_title="Stock Trading Prediction",
+    page_title="Stock Trading Market",
     page_icon="📈",
     layout="wide"
 )
 
 st.markdown("""
 <style>
-
-/* ==========================
-   MAIN PAGE
-========================== */
-
-html, body{
-    background:#f4f7fb;
+:root {
+    --primary:#075c35;
+    --primary-dark:#043d25;
+    --accent:#9ac64d;
+    --surface:#ffffff;
+    --background:#eef3f8;
+    --text:#102a43;
+    --muted:#627d98;
+    --border:#d9e2ec;
+    --soft:#edf7e5;
+    --soft-border:#cfe4bd;
 }
 
-.block-container{
-    max-width:1200px;
-    padding-top:1rem;
-    padding-bottom:2rem;
-    padding-left:2rem;
-    padding-right:2rem;
+html, body, [data-testid="stAppViewContainer"] {
+    background:var(--background);
+    color:var(--text);
 }
 
-/* ==========================
-   TITLES
-========================== */
+[data-testid="stAppViewContainer"] > .main {
+    background:
+      radial-gradient(circle at top right, rgba(154,198,77,.16), transparent 28rem),
+      var(--background);
+}
 
-h1{
+.block-container {
+    max-width:1180px;
+    padding:1.35rem 1.65rem 3rem;
+}
+
+#MainMenu, footer { visibility:hidden; }
+header { background:transparent !important; }
+
+h1, h2, h3, h4, p, label { color:var(--text) !important; }
+h1 { font-size:clamp(1.75rem, 4vw, 2.65rem) !important; line-height:1.15; }
+h1, h2, h3 { text-align:center; }
+
+.hero {
+    padding:1.35rem;
+    border-radius:24px;
+    background:linear-gradient(135deg, var(--primary-dark), var(--primary));
+    margin-bottom:1rem;
+    box-shadow:0 16px 40px rgba(4,61,37,.18);
+}
+.hero, .hero * { color:#fff !important; }
+.hero-title { font-size:clamp(1.45rem, 5vw, 2.25rem); font-weight:800; margin:0; }
+.hero-subtitle { margin:.45rem 0 0; opacity:.88; font-size:.98rem; }
+.hero-chip {
+    display:inline-block; margin-top:.9rem; padding:.35rem .7rem;
+    border:1px solid rgba(255,255,255,.28); border-radius:999px;
+    background:rgba(255,255,255,.11); font-size:.78rem; font-weight:700;
+}
+
+.control-panel, .section-panel {
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:20px;
+    padding:1rem;
+    box-shadow:0 7px 22px rgba(16,42,67,.06);
+    margin-bottom:1rem;
+}
+
+div[data-baseweb="select"] > div {
+    min-height:52px;
+    border:2px solid var(--border) !important;
+    border-radius:14px !important;
+    background:#ffffff !important;
+    box-shadow:0 3px 10px rgba(16,42,67,.05);
+}
+
+div[data-baseweb="select"] span,
+div[data-baseweb="select"] input,
+div[data-baseweb="select"] div {
     color:#102a43 !important;
+    opacity:1 !important;
+    -webkit-text-fill-color:#102a43 !important;
+}
+
+div[data-baseweb="select"] span {
+    font-size:1rem !important;
+    font-weight:800 !important;
+    line-height:1.25 !important;
+}
+
+div[data-baseweb="select"] input {
+    font-size:1rem !important;
+    font-weight:800 !important;
+}
+
+div[data-baseweb="select"] > div {
+    color:#102a43 !important;
+    background:#ffffff !important;
+}
+
+div[data-baseweb="select"] [aria-selected="true"] {
+    color:#102a43 !important;
+    opacity:1 !important;
+}
+
+div[data-baseweb="select"] svg {
+    fill:var(--primary) !important;
+    color:var(--primary) !important;
+    opacity:1 !important;
+}
+
+[data-testid="stSelectbox"] {
+    margin-bottom:.35rem;
+}
+
+[data-testid="stSelectbox"] label p {
+    color:var(--text) !important;
+    font-size:.88rem !important;
+    font-weight:800 !important;
+    margin-bottom:.3rem !important;
+}
+
+/* Keep the currently selected value readable before and after focus */
+[data-testid="stSelectbox"] div[role="button"],
+[data-testid="stSelectbox"] div[role="combobox"],
+[data-testid="stSelectbox"] [aria-haspopup="listbox"] {
+    background:#ffffff !important;
+    color:#102a43 !important;
+    opacity:1 !important;
+}
+
+[data-testid="stSelectbox"] div[role="button"] *,
+[data-testid="stSelectbox"] div[role="combobox"] *,
+[data-testid="stSelectbox"] [aria-haspopup="listbox"] * {
+    color:#102a43 !important;
+    opacity:1 !important;
+    -webkit-text-fill-color:#102a43 !important;
+    font-weight:800 !important;
+}
+
+[data-testid="stSelectbox"] div[role="button"]:focus,
+[data-testid="stSelectbox"] div[role="combobox"]:focus,
+[data-testid="stSelectbox"] [aria-haspopup="listbox"]:focus {
+    border-color:var(--primary) !important;
+    box-shadow:0 0 0 3px var(--soft) !important;
+}
+
+.control-heading {
+    margin:0 0 .9rem;
+    text-align:center;
+}
+
+.control-heading h3 {
+    margin:0;
+    color:var(--primary) !important;
+    text-align:center;
+}
+
+.control-heading p {
+    margin:.3rem auto 0;
+    text-align:center;
+    max-width:680px;
+}
+
+.section-panel h3,
+.hero-title,
+.hero-subtitle {
+    text-align:center;
+}
+
+.section-panel .small-note {
+    text-align:center;
+}
+
+.stock-badge {
+    display:inline-flex;
+    align-items:center;
+    gap:.45rem;
+    padding:.38rem .72rem;
+    border-radius:999px;
+    color:white !important;
+    background:var(--primary);
+    font-size:.78rem;
+    font-weight:800;
+    margin-bottom:.7rem;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] {
+    border:1px solid var(--border) !important;
+    border-radius:20px !important;
+    background:var(--surface) !important;
+    box-shadow:0 7px 22px rgba(16,42,67,.06);
+    padding:.35rem !important;
+    margin-bottom:1rem;
+}
+
+/* ==========================
+   SELECT DROPDOWN POPUP
+========================== */
+div[data-baseweb="popover"],
+div[data-baseweb="menu"],
+ul[role="listbox"] {
+    background:#ffffff !important;
+    border:1px solid var(--border) !important;
+    border-radius:14px !important;
+    box-shadow:0 14px 34px rgba(16,42,67,.18) !important;
+    overflow:hidden !important;
+    z-index:999999 !important;
+}
+
+li[role="option"] {
+    background:#ffffff !important;
+    color:#102a43 !important;
+    min-height:46px !important;
+    padding:.72rem .85rem !important;
+    font-size:.98rem !important;
     font-weight:700 !important;
 }
 
-h2{
+li[role="option"] *,
+div[role="option"] * {
     color:#102a43 !important;
 }
 
-h3{
-    color:#102a43 !important;
+li[role="option"]:hover,
+li[role="option"][aria-selected="true"],
+div[role="option"]:hover,
+div[role="option"][aria-selected="true"] {
+    background:var(--soft) !important;
+    color:var(--primary-dark) !important;
 }
 
-h4{
-    color:#102a43 !important;
+div[data-baseweb="popover"] {
+    max-width:calc(100vw - 1.4rem) !important;
 }
 
-label{
-    color:#102a43 !important;
-    font-weight:600;
+
+@media (max-width:768px) {
+    html, body, [data-testid="stAppViewContainer"] {
+        overflow-x:hidden !important;
+    }
+
+    [data-testid="stAppViewContainer"] {
+        padding:0 .45rem !important;
+    }
+
+    .block-container {
+        width:calc(100% - .7rem) !important;
+        max-width:none !important;
+        margin:.45rem auto 1rem !important;
+        padding:.8rem .72rem 1.35rem !important;
+        border:1px solid var(--border) !important;
+        border-radius:18px !important;
+        box-shadow:0 8px 22px rgba(16,42,67,.09) !important;
+    }
+
+    .hero,
+    .section-panel,
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius:16px !important;
+    }
+
+    .hero {
+        padding:1rem .75rem !important;
+        margin-bottom:.75rem !important;
+    }
+
+    .section-panel {
+        padding:.85rem .72rem !important;
+        margin:.7rem 0 !important;
+    }
+
+    [data-testid="stHorizontalBlock"] {
+        gap:.7rem !important;
+    }
+
+    [data-testid="stMetric"] {
+        padding:.75rem !important;
+    }
+
+    [data-testid="stPlotlyChart"] {
+        margin:.35rem 0 .75rem !important;
+        border:1px solid var(--border);
+        border-radius:16px;
+        overflow:hidden;
+        background:#ffffff;
+    }
+
+    .js-plotly-plot,
+    .plot-container,
+    .svg-container {
+        width:100% !important;
+        max-width:100% !important;
+    }
 }
 
-p{
-    color:#334e68 !important;
+@media (max-width:768px) {
+    div[data-baseweb="popover"],
+    div[data-baseweb="menu"],
+    ul[role="listbox"] {
+        max-width:calc(100vw - 1.35rem) !important;
+    }
+
+    li[role="option"] {
+        min-height:48px !important;
+        font-size:1rem !important;
+    }
 }
 
-/* ==========================
-   METRIC CARDS
-========================== */
 
-.metric-container{
+.stButton > button {
+    width:100%; min-height:52px; border:0; border-radius:14px;
+    background:linear-gradient(135deg, var(--accent), #b4d86c) !important;
+    color:var(--primary-dark) !important; font-size:1rem; font-weight:800;
+    box-shadow:0 8px 20px rgba(154,198,77,.28);
+}
+.stButton > button:hover { filter:brightness(1.04); transform:translateY(-1px); }
 
-    background:#ffffff !important;
+.metric-container {
+    height:100%; min-height:142px; padding:1rem;
+    border-radius:19px; background:var(--surface);
+    border:1px solid var(--border); box-shadow:0 7px 22px rgba(16,42,67,.07);
+    display:flex; flex-direction:column; justify-content:center; text-align:left;
+}
+.metric-icon { font-size:1.25rem; margin-bottom:.45rem; }
+.metric-label { color:var(--muted) !important; font-size:.79rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
+.metric-value { color:var(--text) !important; font-size:clamp(1.35rem, 4vw, 2rem); font-weight:850; margin-top:.25rem; overflow-wrap:anywhere; }
+.metric-note { color:var(--primary) !important; font-size:.88rem; font-weight:750; margin-top:.3rem; }
 
-    border-radius:20px;
+.result-section {
+    background:linear-gradient(135deg, var(--primary-dark), var(--primary));
+    border-radius:20px; padding:1rem 1.15rem; margin:1rem 0;
+    box-shadow:0 10px 28px rgba(4,61,37,.16);
+}
+.result-section, .result-section * { color:white !important; }
+.result-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:.75rem; }
+.result-item { background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.16); border-radius:14px; padding:.75rem; }
+.result-label { font-size:.72rem; opacity:.78; text-transform:uppercase; font-weight:750; }
+.result-value { margin-top:.22rem; font-size:.9rem; font-weight:750; line-height:1.35; overflow-wrap:anywhere; }
 
-    padding:20px;
+.reason-box {
+    padding:.95rem 1rem;
+    border-radius:15px;
+    background:var(--soft);
+    border:1px solid var(--soft-border);
+    margin:.8rem 0 1rem;
+}
+.reason-box strong { color:var(--primary) !important; }
 
-    margin-bottom:18px;
+[data-testid="stDataFrame"] {
+    border:1px solid var(--border); border-radius:16px; overflow:hidden;
+    background:#fff;
+}
+[data-testid="stDataFrame"] * { font-size:.86rem !important; }
 
-    border:1px solid #d9e2ec;
+[data-testid="stImage"] img { border-radius:14px; }
+[data-testid="stPlotlyChart"], [data-testid="stPyplotGlobalUse"] { width:100% !important; }
 
-    box-shadow:0 6px 18px rgba(0,0,0,.08);
-
-    text-align:center;
-
+.market-link a {
+    display:inline-flex; align-items:center; justify-content:center; width:100%;
+    min-height:48px; border-radius:13px; text-decoration:none !important;
+    color:var(--primary-dark) !important; background:var(--soft); border:1px solid var(--soft-border);
+    font-weight:800;
 }
 
-/* force all text visible */
+.small-note { color:var(--muted) !important; font-size:.82rem; }
 
-.metric-container,
-.metric-container *{
-
-    color:#102a43 !important;
-
+@media (max-width:768px) {
+    .block-container {
+        padding:.85rem .85rem 2.25rem;
+        max-width:100%;
+    }
+    .hero { border-radius:19px; padding:1.05rem; }
+    .control-panel, .section-panel { border-radius:17px; padding:.9rem; margin-bottom:.85rem; }
+    [data-testid="stVerticalBlockBorderWrapper"] { border-radius:17px !important; padding:.2rem !important; }
+    [data-testid="stSelectbox"] { margin-bottom:.6rem; }
+    [data-testid="stHorizontalBlock"] { gap:.65rem !important; }
+    [data-testid="column"] { min-width:100% !important; flex:1 1 100% !important; }
+    .metric-container { min-height:112px; border-radius:16px; padding:.85rem; }
+    .result-grid { grid-template-columns:1fr; gap:.55rem; }
+    .result-section { border-radius:17px; padding:.85rem; }
+    div[data-baseweb="select"] > div, .stButton > button { min-height:48px; }
+    [data-testid="stDataFrame"] { max-width:100%; }
+    [data-testid="stDataFrame"] * { font-size:.78rem !important; }
 }
 
-.metric-container h4{
-
-    font-size:18px !important;
-
-    margin-bottom:10px;
-
-    color:#486581 !important;
-
+@media (max-width:420px) {
+    .block-container { padding-left:.68rem; padding-right:.68rem; }
+    .hero-title { font-size:1.45rem; }
+    .metric-value { font-size:1.35rem; }
+    .metric-label { font-size:.72rem; }
 }
-
-.metric-container h2{
-
-    font-size:30px !important;
-
-    font-weight:bold;
-
-    color:#0b6623 !important;
-
-    margin-top:8px;
-
-    margin-bottom:10px;
-
-}
-
-.metric-container p{
-
-    font-size:18px !important;
-
-    color:#0b6623 !important;
-
-}
-
-/* ==========================
-   RESULT CARD
-========================== */
-
-.result-section{
-
-    background:linear-gradient(135deg,#014421,#0b6623);
-
-    padding:22px;
-
-    border-radius:20px;
-
-    margin-top:15px;
-
-    margin-bottom:20px;
-
-}
-
-.result-section,
-.result-section *{
-
-    color:white !important;
-
-}
-
-/* ==========================
-   BUTTON
-========================== */
-
-.stButton>button{
-
-    width:100%;
-
-    height:55px;
-
-    border:none;
-
-    border-radius:14px;
-
-    background:#86b64f !important;
-
-    color:#042f1d !important;
-
-    font-size:18px;
-
-    font-weight:bold;
-
-}
-
-.stButton>button:hover{
-
-    background:#9ed35f !important;
-
-}
-
-/* ==========================
-   SELECTBOX
-========================== */
-
-div[data-baseweb="select"]{
-
-    border-radius:14px;
-
-}
-
-/* ==========================
-   STREAMLIT METRICS
-========================== */
-
-div[data-testid="stMetric"]{
-
-    background:white;
-
-    border-radius:18px;
-
-    padding:18px;
-
-    border:1px solid #d9e2ec;
-
-}
-
-div[data-testid="stMetric"] label{
-
-    color:#486581 !important;
-
-}
-
-div[data-testid="stMetricValue"]{
-
-    color:#0b6623 !important;
-
-}
-
-/* ==========================
-   IMAGE
-========================== */
-
-img{
-
-    display:block;
-
-    margin:auto;
-
-}
-
-/* ==========================
-   GRAPH
-========================== */
-
-canvas{
-
-    width:100%!important;
-
-}
-
-/* ==========================
-   MOBILE
-========================== */
-
-@media (max-width:768px){
-
-.block-container{
-
-    padding-left:12px;
-
-    padding-right:12px;
-
-    padding-top:8px;
-
-}
-
-h1{
-
-    font-size:26px !important;
-
-    text-align:center;
-
-}
-
-h2{
-
-    font-size:22px !important;
-
-}
-
-h3{
-
-    font-size:20px !important;
-
-}
-
-.metric-container{
-
-    padding:16px;
-
-}
-
-.metric-container h2{
-
-    font-size:24px !important;
-
-}
-
-.metric-container h4{
-
-    font-size:16px !important;
-
-}
-
-.result-section{
-
-    padding:16px;
-
-}
-
-}
-
-/* ==========================
-   HIDE DEFAULT
-========================== */
-
-header{
-
-    visibility:hidden;
-
-}
-
-footer{
-
-    visibility:hidden;
-
-}
-
-#MainMenu{
-
-    visibility:hidden;
-
-}
-
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📈 STOCK TRADING MARKET PRICE")
-st.caption("Smart AI Prediction System")
+st.markdown(
+    """
+    <section class="hero">
+        <div class="hero-title">📈 STOCK TRADING MARKET FORCASTING SYSTEM</div>
+        <p class="hero-subtitle">Automated powered price prediction and trading recommendation dashboard.</p>
+        <span class="hero-chip">Analyze • Forcast • Invest</span>
+    </section>
+    """,
+    unsafe_allow_html=True,
+)
 
 # =========================
-# STOCK SELECT
+# STOCK BRAND THEMES
 # =========================
-stock = st.selectbox("SELECT STOCK INVESTORS", ["CRDB","NMB","TTCL","DTB"])
+stock_themes = {
+    "CRDB": {
+        "name": "CRDB Bank Plc",
+        "primary": "#006B3F",
+        "primary_dark": "#003E25",
+        "accent": "#9BC53D",
+        "soft": "#ECF7E8",
+        "soft_border": "#C9E4BC",
+        "glow": "rgba(155,197,61,.18)",
+        "logo": "crdb_logo.png",
+        "emoji": "🟢",
+    },
+    "NMB": {
+        "name": "NMB Bank Plc",
+        "primary": "#00529B",
+        "primary_dark": "#00345F",
+        "accent": "#F4B400",
+        "soft": "#EAF3FB",
+        "soft_border": "#BFD6EA",
+        "glow": "rgba(0,82,155,.16)",
+        "logo": "nmb_logo.png",
+        "emoji": "🔵",
+    },
+    "TTCL": {
+        "name": "TTCL Corporation",
+        "primary": "#0067A5",
+        "primary_dark": "#003B61",
+        "accent": "#F4C430",
+        "soft": "#EAF5FB",
+        "soft_border": "#BDDCEB",
+        "glow": "rgba(0,103,165,.16)",
+        "logo": "ttcl_logo.png",
+        "emoji": "📡",
+    },
+    "DTB": {
+        "name": "Diamond Trust Bank",
+        "primary": "#B51F2E",
+        "primary_dark": "#6D101A",
+        "accent": "#1D4F91",
+        "soft": "#FBEDEF",
+        "soft_border": "#E7C1C6",
+        "glow": "rgba(181,31,46,.15)",
+        "logo": "dtb_logo.png",
+        "emoji": "🔴",
+    },
+}
 
-app_title = "📈 STOCK TRADING MARKET PRICE"
-if stock == "CRDB":
-    app_title = "📈 CRDB MARKET PREDICTION"
+# =========================
+# STOCK AND PERIOD CONTROLS
+# =========================
+st.markdown(
+    "<div class='control-heading'><h3>WELCOME TO AUTOMATIC FORCAST SYSTEM</h3>"
+    "<p class='small-note'>Choose a listed company and forecast period, then run the model.</p></div>",
+    unsafe_allow_html=True,
+)
 
-st.title(app_title)
-st.caption("Smart AI Prediction System")
+with st.container(border=True):
+    control_col1, control_col2 = st.columns(2, gap="medium")
 
-logo_path = "crdb_logo.png"
+    with control_col1:
+        stock = st.selectbox(
+            "Choose stock",
+            ["CRDB", "NMB", "TTCL", "DTB"],
+            key="selected_stock",
+            help="Select the DSE-listed company you want to analyse.",
+        )
+
+    with control_col2:
+        period = st.selectbox(
+            "Choose forecast period",
+            ["Today", "Tomorrow", "Next Week", "Next Month"],
+            key="selected_period",
+            help="Select how far ahead the model should forecast.",
+        )
+
+theme = stock_themes[stock]
+logo_path = theme["logo"]
+
+# Apply the selected company's identity to the whole page.
+st.markdown(
+    f'''
+    <style>
+    :root {{
+        --primary:{theme["primary"]};
+        --primary-dark:{theme["primary_dark"]};
+        --accent:{theme["accent"]};
+        --soft:{theme["soft"]};
+        --soft-border:{theme["soft_border"]};
+    }}
+
+    [data-testid="stAppViewContainer"] > .main {{
+        background:
+          radial-gradient(circle at top right, {theme["glow"]}, transparent 28rem),
+          var(--background);
+    }}
+
+    .stButton > button {{
+        background:linear-gradient(135deg, {theme["accent"]}, {theme["soft_border"]}) !important;
+        color:{theme["primary_dark"]} !important;
+        box-shadow:0 8px 20px {theme["glow"]};
+    }}
+
+    .hero, .result-section {{
+        background:linear-gradient(135deg, {theme["primary_dark"]}, {theme["primary"]});
+    }}
+    </style>
+    <div class="stock-badge">{theme["emoji"]} Active theme: {theme["name"]}</div>
+    ''',
+    unsafe_allow_html=True,
+)
 
 dse_links = {
     "CRDB":"https://www.dse.co.tz/",
@@ -372,9 +557,55 @@ dse_links = {
 # =========================
 # LOAD DATA
 # =========================
-df = pd.read_csv(f"{stock}.csv")
-df["Date"] = pd.to_datetime(df["Date"])
-df = df.sort_values("Date")
+csv_path = f"{stock}.csv"
+
+if not os.path.exists(csv_path):
+    st.markdown(
+        f'''
+        <div style="
+            margin:1rem 0;
+            padding:1rem;
+            border-radius:16px;
+            border:1px solid {theme["soft_border"]};
+            background:{theme["soft"]};
+            text-align:center;
+        ">
+            <h3 style="margin:0;color:{theme["primary_dark"]} !important;">
+                📁 File not found
+            </h3>
+            <p style="margin:.45rem 0 0;color:#334e68 !important;">
+                The data file <strong>{csv_path}</strong> was not found.
+                Add it to the same project folder as <strong>app.py</strong>,
+                then restart the application.
+            </p>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
+    st.stop()
+
+try:
+    df = pd.read_csv(csv_path)
+except Exception as error:
+    st.error(f"Could not read {csv_path}: {error}")
+    st.stop()
+
+required_columns = {"Date", "Open", "High", "Low", "Close", "Volume"}
+missing_columns = required_columns.difference(df.columns)
+
+if missing_columns:
+    st.error(
+        f"{csv_path} is missing required columns: "
+        + ", ".join(sorted(missing_columns))
+    )
+    st.stop()
+
+df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+df = df.dropna(subset=["Date"]).sort_values("Date")
+
+if df.empty:
+    st.error(f"{csv_path} does not contain valid dated stock records.")
+    st.stop()
 
 # =========================
 # FEATURES ENGINE
@@ -438,8 +669,6 @@ if session is None and keras_model is None:
 # =========================
 # TIME OPTIONS
 # =========================
-period = st.selectbox("SELECT FORECAST PERIOD", ["Today","Tomorrow","Next Week","Next Month"])
-
 def forecast_days(x):
     return {"Today":1,"Tomorrow":1,"Next Week":7,"Next Month":30}[x]
 
@@ -511,7 +740,7 @@ def predict_future(days, data):
 # =========================
 # RUN
 # =========================
-if st.button("🚀 RUN PREDICTION"):
+if st.button("🚀 RUN PREDICTION", use_container_width=True):
 
     days = forecast_days(period)
     predictions = predict_future(days, scaled)
@@ -568,47 +797,94 @@ if st.button("🚀 RUN PREDICTION"):
     # Price difference
     diff = future_price - current_price
     diff_pct = (diff / current_price) * 100
-
-    # Noise threshold (market micro-movement)
-    threshold = 0.1  # 0.1%
-
-    # =========================
-    # SIGNAL LOGIC (UNIFIED RULE)
-    # =========================
-
-    if abs(diff_pct) <= threshold:
-        signal = "HOLD 🟡"
-        reason = "Market movement is too small (noise zone ±0.1%)."
-
-    elif future_price > current_price:
-        signal = "BUY 🟢"
-        reason = "Forecast price is higher than current price."
-
-    else:
-        signal = "SELL 🔴"
-        reason = "Forecast price is lower than current price."
-
     change = diff_pct
 
     # =========================
-    # OPTIONAL: CONFIDENCE SCORE
+    # FLEXIBLE RECOMMENDATION ENGINE
     # =========================
-    confidence = 70
+    volatility = float(df["Volatility"].iloc[-1])
+    rsi = float(df["RSI"].iloc[-1])
+    macd = float(df["MACD"].iloc[-1])
+    macd_signal = float(df["Signal"].iloc[-1])
+    ma10 = float(df["MA10"].iloc[-1])
+    ma20 = float(df["MA20"].iloc[-1])
+    latest_close = float(df["Close"].iloc[-1])
 
-    volatility = df["Volatility"].iloc[-1]
+    period_thresholds = {
+        "Today": 0.12,
+        "Tomorrow": 0.18,
+        "Next Week": 0.45,
+        "Next Month": 0.90,
+    }
 
-    if signal == "BUY 🟢":
-        if volatility < 0.02:
-            confidence += 10
+    threshold = period_thresholds[period]
 
-    elif signal == "SELL 🔴":
-        if volatility > 0.02:
-            confidence += 10
+    # High volatility requires a stronger price movement before BUY or SELL.
+    if volatility > 0.025:
+        threshold *= 1.35
+    elif volatility < 0.010:
+        threshold *= 0.85
 
+    bullish_score = 0
+    bearish_score = 0
+    reasons = []
+
+    if diff_pct > threshold:
+        bullish_score += 3
+        reasons.append(f"forecast movement is above the +{threshold:.2f}% action threshold")
+    elif diff_pct < -threshold:
+        bearish_score += 3
+        reasons.append(f"forecast movement is below the -{threshold:.2f}% action threshold")
     else:
-        confidence += 5
+        reasons.append(f"forecast movement remains inside the ±{threshold:.2f}% neutral zone")
 
-    confidence = min(confidence, 95)
+    if latest_close > ma10 > ma20:
+        bullish_score += 1
+        reasons.append("short-term moving averages show an upward trend")
+    elif latest_close < ma10 < ma20:
+        bearish_score += 1
+        reasons.append("short-term moving averages show a downward trend")
+
+    if macd > macd_signal:
+        bullish_score += 1
+        reasons.append("MACD is above its signal line")
+    elif macd < macd_signal:
+        bearish_score += 1
+        reasons.append("MACD is below its signal line")
+
+    if rsi < 35:
+        bullish_score += 1
+        reasons.append(f"RSI {rsi:.1f} indicates a potentially oversold market")
+    elif rsi > 70:
+        bearish_score += 1
+        reasons.append(f"RSI {rsi:.1f} indicates a potentially overbought market")
+
+    if bullish_score >= 4 and bullish_score > bearish_score:
+        signal = "BUY 🟢"
+        reason = "BUY because " + "; ".join(reasons) + "."
+    elif bearish_score >= 4 and bearish_score > bullish_score:
+        signal = "SELL 🔴"
+        reason = "SELL because " + "; ".join(reasons) + "."
+    else:
+        signal = "HOLD 🟡"
+        reason = "HOLD because signals are not strong enough: " + "; ".join(reasons) + "."
+
+    signal_strength = abs(bullish_score - bearish_score)
+    movement_strength = min(abs(diff_pct) / max(threshold, 0.01), 2.0)
+
+    confidence = 58
+    confidence += int(signal_strength * 7)
+    confidence += int(movement_strength * 7)
+
+    if volatility < 0.015:
+        confidence += 5
+    elif volatility > 0.030:
+        confidence -= 6
+
+    if signal == "HOLD 🟡":
+        confidence = min(confidence, 78)
+
+    confidence = int(np.clip(confidence, 50, 95))
 
     # =========================
     # TREND BOOST (NEXT WEEK / MONTH)
@@ -658,29 +934,68 @@ if st.button("🚀 RUN PREDICTION"):
     # =========================
     # UI
     # =========================
-    if stock == "CRDB":
+    brand_col1, brand_col2 = st.columns([1, 4], gap="medium")
+
+    with brand_col1:
+        if os.path.exists(logo_path):
+            st.image(logo_path, width=88)
+        else:
+            st.markdown(
+                f"<div class='metric-container' style='min-height:88px;text-align:center;'>"
+                f"<div class='metric-icon'>{theme['emoji']}</div>"
+                f"<div class='metric-label'>{stock}</div></div>",
+                unsafe_allow_html=True,
+            )
+
+    with brand_col2:
         st.markdown(
-            "<div class='result-section' style='display:flex; align-items:center; gap:20px;'>"
-            "<div><h3 style='margin:0;'>CRDB Investor Forecast</h3>"
-            "<p style='margin:4px 0 0; color:#d4e9c7;'>Trusted CRDB prediction insights</p></div></div>",
-            unsafe_allow_html=True
+            f"<div class='section-panel' style='border-top:5px solid {theme['primary']};'>"
+            f"<h3 style='margin:0;text-align:center;'>{theme['name']} investor forecast</h3>"
+            f"<p class='small-note' style='margin:.25rem 0 0;text-align:center;'>"
+            f"Brand-themed results for the selected {period.lower()} forecast.</p></div>",
+            unsafe_allow_html=True,
         )
-        st.image(logo_path, width=120)
 
     c1, c2, c3 = st.columns(3)
 
     with c1:
-        st.markdown("<div class='metric-container'>💰<strong> Current Price</strong><br>" + f"{current_price:.2f} TZS</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='metric-container'><div class='metric-icon'>💰</div>"
+            f"<div class='metric-label'>Current price</div>"
+            f"<div class='metric-value'>{current_price:,.2f} TZS</div>"
+            f"<div class='metric-note'>Latest reference price</div></div>",
+            unsafe_allow_html=True,
+        )
     with c2:
-        st.markdown("<div class='metric-container'>🔮<strong> Forecast Price</strong><br>" + f"{future_price:.2f} TZS<br><span style='color:#0b6623;'>{change:.2f}%</span></div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='metric-container'><div class='metric-icon'>🔮</div>"
+            f"<div class='metric-label'>Forecast price</div>"
+            f"<div class='metric-value'>{future_price:,.2f} TZS</div>"
+            f"<div class='metric-note'>{change:+.2f}% projected change</div></div>",
+            unsafe_allow_html=True,
+        )
     with c3:
-        st.markdown("<div class='metric-container'>📊<strong> Signal</strong><br>" + f"{signal}</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='metric-container'><div class='metric-icon'>📊</div>"
+            f"<div class='metric-label'>Trading signal</div>"
+            f"<div class='metric-value'>{signal}</div>"
+            f"<div class='metric-note'>{confidence}% confidence</div></div>",
+            unsafe_allow_html=True,
+        )
 
-    st.markdown("<div class='result-section'>" +
-                f"<p>🕒 CURRENT TIME: {now.strftime('%d %B %Y %H:%M')}</p>" +
-                f"<p>📅 FORECAST TIME: {forecast_time.strftime('%d %B %Y %H:%M')}</p>" +
-                f"<p>📈 CHANGE: {change:.2f}%</p>" +
-                "</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='result-section'><div class='result-grid'>"
+        f"<div class='result-item'><div class='result-label'>Current time</div><div class='result-value'>{now.strftime('%d %b %Y, %H:%M')}</div></div>"
+        f"<div class='result-item'><div class='result-label'>Forecast time</div><div class='result-value'>{forecast_time.strftime('%d %b %Y, %H:%M')}</div></div>"
+        f"<div class='result-item'><div class='result-label'>Expected movement</div><div class='result-value'>{change:+.2f}%</div></div>"
+        "</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"<div class='reason-box'><strong>Recommendation explanation:</strong> {reason}</div>",
+        unsafe_allow_html=True,
+    )
 
     future_prices = []
     for p in predictions:
@@ -689,43 +1004,212 @@ if st.button("🚀 RUN PREDICTION"):
         future_prices.append(scaler.inverse_transform(temp)[0][close_id])
 
     recommendations = []
-    for price in future_prices:
-        diff_pct = (price - current_price) / current_price * 100
-        if abs(diff_pct) <= 0.1:
-            recommendations.append("HOLD: wait for clearer movement")
-        elif diff_pct > 0:
-            recommendations.append("BUY: price is trending higher")
+    row_threshold = period_thresholds[period]
+
+    if volatility > 0.025:
+        row_threshold *= 1.35
+    elif volatility < 0.010:
+        row_threshold *= 0.85
+
+    for index, price in enumerate(future_prices):
+        row_change = (price - current_price) / current_price * 100
+
+        # Require slightly stronger evidence for forecasts further in the future.
+        horizon_factor = 1 + (index / max(len(future_prices) - 1, 1)) * 0.25
+        dynamic_threshold = row_threshold * horizon_factor
+
+        if row_change > dynamic_threshold:
+            recommendations.append(f"BUY: projected +{row_change:.2f}%")
+        elif row_change < -dynamic_threshold:
+            recommendations.append(f"SELL: projected {row_change:.2f}%")
         else:
-            recommendations.append("SELL: price is trending lower")
+            recommendations.append(
+                f"HOLD: within ±{dynamic_threshold:.2f}% neutral zone"
+            )
 
     schedule_df = pd.DataFrame({
-        "Prediction #": list(range(1, len(forecast_times) + 1)),
-        "Forecast Time": [t.strftime('%d %b %Y %H:%M') for t in forecast_times[:len(predictions)]],
-        "Predicted Price": [f"{p:.2f}" for p in future_prices],
-        "Recommendation": recommendations
+        "No.": list(range(1, len(forecast_times) + 1)),
+        "Forecast time": [t.strftime('%d %b %Y %H:%M') for t in forecast_times[:len(predictions)]],
+        "Price (TZS)": [round(p, 2) for p in future_prices],
+        "Recommendation": recommendations,
     })
-    st.markdown("<div class='table-panel'><h3 style='margin-top:0;'>📅 Forecast Schedule</h3></div>", unsafe_allow_html=True)
-    st.table(schedule_df)
 
-    st.markdown(f"[🔗 OPEN MARKET]({dse_links.get(stock)})")
+    st.markdown("<div class='section-panel'><h3 style='margin:0;'>📅 Forecast schedule</h3><p class='small-note' style='margin:.25rem 0 0;'>Swipe horizontally on a small screen to inspect every column.</p></div>", unsafe_allow_html=True)
+    st.dataframe(
+        schedule_df,
+        use_container_width=True,
+        hide_index=True,
+        height=min(460, 78 + 35 * len(schedule_df)),
+        column_config={
+            "No.": st.column_config.NumberColumn(width="small"),
+            "Forecast time": st.column_config.TextColumn(width="medium"),
+            "Price (TZS)": st.column_config.NumberColumn(format="%.2f", width="medium"),
+            "Recommendation": st.column_config.TextColumn(width="large"),
+        },
+    )
+
+    st.markdown(
+        f"<div class='market-link'><a href='{dse_links.get(stock)}' target='_blank'>🔗 Open Dar es Salaam Stock Exchange</a></div>",
+        unsafe_allow_html=True,
+    )
 
     # =========================
-    # GRAPH
+    # INTERACTIVE MOTION GRAPH
     # =========================
-    st.subheader("📊 HISTORICAL + FORECAST")
+    st.markdown(
+        "<div class='section-panel'><h3 style='margin:0;'>📊 Interactive historical and forecast trend</h3>"
+        "<p class='small-note' style='margin:.25rem 0 0;'>"
+        "Hover to inspect prices, drag to zoom, and use the toolbar to reset the view.</p></div>",
+        unsafe_allow_html=True,
+    )
 
-    fig, ax = plt.subplots(figsize=(12,5))
+    history = df.tail(100)
+    future_dates = forecast_times[:len(future_prices)]
 
-    ax.plot(df.tail(100).Date, df.tail(100).Close, label="CURRENT")
+    fig = go.Figure()
 
-    future_dates = forecast_times[:len(predictions)]
+    fig.add_trace(
+        go.Scatter(
+            x=history["Date"],
+            y=history["Close"],
+            mode="lines",
+            name="Historical close",
+            line=dict(color=theme["primary_dark"], width=2.4),
+            hovertemplate="<b>%{x|%d %b %Y}</b><br>Historical: %{y:,.2f} TZS<extra></extra>",
+        )
+    )
 
-    ax.plot(future_dates, future_prices, marker="o", label="FORECAST")
+    fig.add_trace(
+        go.Scatter(
+            x=future_dates,
+            y=future_prices,
+            mode="lines+markers",
+            name="Forecast",
+            line=dict(color=theme["primary"], width=3),
+            marker=dict(
+                size=8,
+                color=theme["accent"],
+                line=dict(color=theme["primary_dark"], width=1),
+            ),
+            hovertemplate="<b>%{x|%d %b %Y %H:%M}</b><br>Forecast: %{y:,.2f} TZS<extra></extra>",
+        )
+    )
 
-    ax.set_title(f"{stock} Prediction")
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Price")
-    ax.legend()
-    ax.grid()
+    fig.add_trace(
+        go.Scatter(
+            x=[history["Date"].iloc[-1]],
+            y=[history["Close"].iloc[-1]],
+            mode="markers",
+            name="Latest close",
+            marker=dict(
+                size=12,
+                color=theme["accent"],
+                line=dict(color=theme["primary_dark"], width=2),
+            ),
+            hovertemplate="<b>Latest close</b><br>%{y:,.2f} TZS<extra></extra>",
+        )
+    )
 
-    st.pyplot(fig)
+    # Add a visual connection from the latest historical point to the forecast.
+    if future_dates:
+        fig.add_trace(
+            go.Scatter(
+                x=[history["Date"].iloc[-1], future_dates[0]],
+                y=[history["Close"].iloc[-1], future_prices[0]],
+                mode="lines",
+                name="Forecast transition",
+                line=dict(color=theme["primary"], width=2, dash="dot"),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+    chart_height = 500 if len(future_prices) <= 10 else 540
+
+    fig.update_layout(
+        title=dict(
+            text=f"{stock} interactive price forecast",
+            x=0.5,
+            xanchor="center",
+            font=dict(size=20),
+        ),
+        xaxis_title=dict(
+            text="Date and time",
+            font=dict(size=16),
+            standoff=16,
+        ),
+        yaxis_title=dict(
+            text="Price (TZS)",
+            font=dict(size=16),
+            standoff=18,
+        ),
+        hovermode="x unified",
+        height=chart_height,
+        autosize=True,
+        margin=dict(l=72, r=24, t=88, b=76),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
+        ),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#ffffff",
+        transition=dict(duration=700, easing="cubic-in-out"),
+    )
+
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor="rgba(98,125,152,.16)",
+        tickfont=dict(size=13, color="#334e68"),
+        title_font=dict(size=16, color="#102a43"),
+        automargin=True,
+        tickangle=-25,
+        showline=True,
+        linecolor="rgba(98,125,152,.45)",
+        linewidth=1,
+        rangeslider=dict(visible=True, thickness=0.08),
+        rangeselector=dict(
+            buttons=[
+                dict(count=7, label="7D", step="day", stepmode="backward"),
+                dict(count=1, label="1M", step="month", stepmode="backward"),
+                dict(count=3, label="3M", step="month", stepmode="backward"),
+                dict(step="all", label="All"),
+            ]
+        ),
+    )
+
+    fig.update_yaxes(
+        showgrid=True,
+        gridcolor="rgba(98,125,152,.16)",
+        tickformat=",.0f",
+        tickfont=dict(size=13, color="#334e68"),
+        title_font=dict(size=16, color="#102a43"),
+        automargin=True,
+        separatethousands=True,
+        showline=True,
+        linecolor="rgba(98,125,152,.45)",
+        linewidth=1,
+        fixedrange=False,
+    )
+
+    st.markdown(
+        "<div style='text-align:center;font-weight:700;margin:.15rem 0 .4rem;'>"
+        "Move over the chart to inspect each price point</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "displaylogo": False,
+            "responsive": True,
+            "scrollZoom": True,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+        },
+        key=f"interactive_forecast_{stock}_{period}",
+    )
+
+    st.caption("Prediction is an analytical estimate, not a guarantee of investment returns.")
