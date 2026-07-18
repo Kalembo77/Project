@@ -3,6 +3,7 @@ pandas
 numpy
 plotly
 scikit-learn
+openpyxl
 matplotlib
 joblib
 onnxruntime

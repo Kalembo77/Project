@@ -41,7 +41,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 #st.set_page_config(page_title="CRDB STOCK MARKET PREDICTOR", layout="wide")
 
 st.set_page_config(
-    page_title="Stock Trading Prediction",
+    page_title="Stock Trading Market Predictor",
     page_icon="📈",
     layout="wide"
 )
@@ -621,15 +621,94 @@ div[data-testid="column"]:first-child label {
     }
 }
 
-/* Locked secondary actions before prediction */
-.stButton > button:disabled {
-    background:#e9eef3 !important;
-    color:#8a9baa !important;
-    border:1px solid #d7e0e8 !important;
-    box-shadow:none !important;
-    cursor:not-allowed !important;
-    opacity:.82 !important;
-    transform:none !important;
+/* Prediction-first guidance */
+[data-testid="stAlert"] {
+    border-radius:14px !important;
+    border:1px solid #f3c969 !important;
+    box-shadow:0 7px 18px rgba(16,42,67,.06) !important;
+}
+
+@media (max-width:768px) {
+    [data-testid="stAlert"] {
+        font-size:.88rem !important;
+    }
+}
+
+
+/* ==========================
+   FINAL LEFT-SIDE DASHBOARD LAYOUT
+========================== */
+
+/* Keep desktop layout as a true left control rail + right content area */
+@media (min-width:769px) {
+    [data-testid="stHorizontalBlock"] {
+        align-items:flex-start !important;
+    }
+
+    [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+        flex:0 0 260px !important;
+        width:260px !important;
+        min-width:260px !important;
+        max-width:260px !important;
+    }
+
+    [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2) {
+        flex:1 1 auto !important;
+        width:auto !important;
+        min-width:0 !important;
+    }
+
+    [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child > div {
+        position:sticky !important;
+        top:1rem !important;
+        align-self:flex-start !important;
+        z-index:20 !important;
+    }
+
+    [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child
+    [data-testid="stVerticalBlock"] {
+        width:100% !important;
+    }
+}
+
+/* All action buttons remain grouped inside the left panel */
+.left-control-card {
+    width:100% !important;
+}
+
+.left-control-help {
+    width:100% !important;
+}
+
+div[data-testid="column"]:first-child .stButton,
+div[data-testid="column"]:first-child [data-testid="stDownloadButton"] {
+    width:100% !important;
+}
+
+/* Mobile: left panel becomes a top control section */
+@media (max-width:768px) {
+    [data-testid="stHorizontalBlock"] {
+        display:flex !important;
+        flex-direction:column !important;
+        gap:.8rem !important;
+    }
+
+    [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        width:100% !important;
+        min-width:100% !important;
+        max-width:100% !important;
+        flex:1 1 100% !important;
+    }
+
+    [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child > div {
+        position:static !important;
+        width:100% !important;
+    }
+
+    div[data-testid="column"]:first-child .stButton > button {
+        width:100% !important;
+        min-height:48px !important;
+    }
 }
 
 </style>
@@ -638,9 +717,9 @@ div[data-testid="column"]:first-child label {
 st.markdown(
     """
     <section class="hero">
-        <div class="hero-title">📈 Stock Market Forecast</div>
-        <p class="hero-subtitle">AI-powered DSE price prediction and trading recommendation dashboard.</p>
-        <span class="hero-chip">Mobile-ready • TZS prices • Smart signals</span>
+        <div class="hero-title">📈 STOCK TRADING MARKET FORECASTING SYSTEM</div>
+        <p class="hero-subtitle">Automated powered price prediction and trading recommendation dashboard.</p>
+        <span class="hero-chip">Forecast • Analyze • Invest</span>
     </section>
     """,
     unsafe_allow_html=True,
@@ -674,7 +753,7 @@ stock_themes = {
     },
     "TTCL": {
         "name": "TTCL Corporation",
-        "primary": "#0067A5",
+        "primary": "#D0FC80",
         "primary_dark": "#003B61",
         "accent": "#F4C430",
         "soft": "#EAF5FB",
@@ -714,10 +793,13 @@ if "prediction_seed" not in st.session_state:
 if "display_mode" not in st.session_state:
     st.session_state.display_mode = None
 
+if "action_message" not in st.session_state:
+    st.session_state.action_message = None
+
 # =========================
 # IN-PAGE LEFT CONTROL PANEL
 # =========================
-left_panel, right_panel = st.columns([1.05, 3.0], gap="large")
+left_panel, right_panel = st.columns([1, 3.35], gap="large")
 
 with left_panel:
     st.markdown(
@@ -744,13 +826,6 @@ with left_panel:
         help="Select how far ahead the model should forecast.",
     )
 
-    prediction_available = (
-        st.session_state.prediction_ready
-        and st.session_state.prediction_stock == stock
-        and st.session_state.prediction_period == period
-        and st.session_state.prediction_seed is not None
-    )
-
     run_prediction = st.button(
         "🚀 RUN PREDICTION",
         use_container_width=True,
@@ -762,57 +837,70 @@ with left_panel:
         "📊 SHOW GRAPH ONLY",
         use_container_width=True,
         key="show_graph_button",
-        disabled=not prediction_available,
-        help=(
-            "Run prediction first."
-            if not prediction_available
-            else "Display the graph from the latest prediction."
-        ),
     )
 
     show_report = st.button(
         "📥 REPORT",
         use_container_width=True,
         key="show_report_button",
-        disabled=not prediction_available,
-        help=(
-            "Run prediction first."
-            if not prediction_available
-            else "Display the report and download options."
-        ),
     )
 
     st.markdown(
         """
         <div class="left-control-help">
-            <strong>RUN PREDICTION</strong> must be completed first.<br>
-            <strong>SHOW GRAPH ONLY</strong> then displays the saved prediction graph.<br>
-            <strong>REPORT</strong> then shows a short summary and download options.
+            <strong>RUN PREDICTION</strong> must be used first.<br>
+            <strong>SHOW GRAPH ONLY</strong> displays only the saved graph.<br><strong>REPORT</strong> displays the saved summary and download options.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-if run_prediction:
-    st.session_state.prediction_ready = True
-    st.session_state.prediction_stock = stock
-    st.session_state.prediction_period = period
-    st.session_state.prediction_seed = int.from_bytes(os.urandom(4), "little")
-    st.session_state.display_mode = "prediction"
-elif show_graph and prediction_available:
-    st.session_state.display_mode = "graph"
-elif show_report and prediction_available:
-    st.session_state.display_mode = "download"
-
-# Changing the selected stock or period locks Graph and Report until a new prediction.
-prediction_available = (
+# Check whether a valid prediction already exists for the current selection.
+prediction_matches_selection = (
     st.session_state.prediction_ready
     and st.session_state.prediction_stock == stock
     and st.session_state.prediction_period == period
     and st.session_state.prediction_seed is not None
 )
 
-if not prediction_available and not run_prediction:
+# Every action only runs after the user clicks its button.
+if run_prediction:
+    st.session_state.prediction_ready = True
+    st.session_state.prediction_stock = stock
+    st.session_state.prediction_period = period
+    st.session_state.prediction_seed = int.from_bytes(os.urandom(4), "little")
+    st.session_state.display_mode = "prediction"
+    st.session_state.action_message = None
+
+elif show_graph:
+    if prediction_matches_selection:
+        st.session_state.display_mode = "graph"
+        st.session_state.action_message = None
+    else:
+        st.session_state.display_mode = None
+        st.session_state.action_message = (
+            "⚠️ Please run prediction first before opening the graph."
+        )
+
+elif show_report:
+    if prediction_matches_selection:
+        st.session_state.display_mode = "download"
+        st.session_state.action_message = None
+    else:
+        st.session_state.display_mode = None
+        st.session_state.action_message = (
+            "⚠️ Please run prediction first before opening the report."
+        )
+
+# Changing stock or period invalidates the previous prediction.
+current_prediction_valid = (
+    st.session_state.prediction_ready
+    and st.session_state.prediction_stock == stock
+    and st.session_state.prediction_period == period
+    and st.session_state.prediction_seed is not None
+)
+
+if not current_prediction_valid and not run_prediction:
     st.session_state.display_mode = None
 
 display_mode = st.session_state.display_mode
@@ -862,12 +950,15 @@ with right_panel:
     }
 
     if display_mode is None:
-        st.markdown(
-            "<div class='section-panel'><h3 style='margin:0;'>Choose an action</h3>"
-            "<p class='small-note' style='margin:.35rem 0 0;'>"
-            "Run a prediction first. SHOW GRAPH ONLY and REPORT will unlock after it completes.</p></div>",
-            unsafe_allow_html=True,
-        )
+        if st.session_state.action_message:
+            st.warning(st.session_state.action_message)
+        else:
+            st.markdown(
+                "<div class='section-panel'><h3 style='margin:0;'>Prediction workspace</h3>"
+                "<p class='small-note' style='margin:.35rem 0 0;'>"
+                "Use the controls on the left. Start by clicking RUN PREDICTION.</p></div>",
+                unsafe_allow_html=True,
+            )
 
     # =========================
     # LOAD DATA
@@ -1055,9 +1146,9 @@ with right_panel:
     # =========================
     # RUN
     # =========================
-    if display_mode is not None and prediction_available:
+    if display_mode is not None and current_prediction_valid:
 
-        # Reuse the exact same random market path for Prediction, Graph and Report.
+        # Reuse the same prediction values for Prediction, Graph and Report.
         np.random.seed(st.session_state.prediction_seed)
 
         days = forecast_days(period)
@@ -1483,6 +1574,7 @@ with right_panel:
 
 
         if display_mode == "prediction":
+            st.caption("Prediction result selected from the left control panel.")
             # =========================
             # UI
             # =========================
@@ -1569,6 +1661,7 @@ with right_panel:
             )
 
         elif display_mode == "download":
+            st.caption("Report view selected from the left control panel.")
             st.markdown(
                 "<div class='section-panel'><h3 style='margin:0;'>📥 Prediction report</h3>"
                 "<p class='small-note' style='margin:.25rem 0 0;'>"
@@ -1641,6 +1734,7 @@ with right_panel:
 
 
         elif display_mode == "graph":
+            st.caption("Graph-only view selected from the left control panel.")
             # =========================
             # INTERACTIVE MOTION GRAPH
             # =========================
