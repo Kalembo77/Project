@@ -4,6 +4,7 @@ numpy
 plotly
 scikit-learn
 openpyxl
+reportlab
 matplotlib
 joblib
 onnxruntime
