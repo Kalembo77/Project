@@ -1307,33 +1307,65 @@ with right_panel:
             predictions = predictions * (1 + drift)
 
         # =========================
-        # FORECAST TIME
+        # SMART FORECAST TIME
         # =========================
+        # Every forecast period receives a different future-time window.
+        # The same prediction seed keeps Prediction, Graph and Report times identical.
         now = datetime.now()
         base_date = now.date()
-        forecast_offset = timedelta(minutes=35)
-        incremental_offset = timedelta(minutes=15)
+        time_rng = np.random.default_rng(st.session_state.prediction_seed + 2026)
+
+        def random_future_offset(min_minutes, max_minutes):
+            """Return a reproducible random timedelta inside the requested range."""
+            minutes = int(time_rng.integers(min_minutes, max_minutes + 1))
+            return timedelta(minutes=minutes)
 
         if period == "Today":
-            forecast_times = [now + forecast_offset]
-        elif period == "Tomorrow":
+            # Today forecast appears 2 hours 30 minutes to 3 hours 45 minutes ahead.
             forecast_times = [
-                datetime.combine(base_date + timedelta(days=1), now.time()) + forecast_offset
-            ]
-        elif period == "Next Week":
-            forecast_times = [
-                datetime.combine(base_date + timedelta(days=i + 1), now.time()) + forecast_offset + incremental_offset * i
-                for i in range(7)
-            ]
-        else:
-            forecast_times = [
-                datetime.combine(base_date + timedelta(days=i + 1), now.time()) + forecast_offset + incremental_offset * i
-                for i in range(30)
+                now + random_future_offset(150, 225)
             ]
 
+        elif period == "Tomorrow":
+            # Tomorrow uses tomorrow's date, with a different 2 to 4 hour offset.
+            tomorrow_same_time = datetime.combine(
+                base_date + timedelta(days=1),
+                now.time()
+            )
+            forecast_times = [
+                tomorrow_same_time + random_future_offset(120, 240)
+            ]
+
+        elif period == "Next Week":
+            # Seven daily forecasts. Each day has its own time between 2½ and 4½ hours ahead.
+            forecast_times = []
+            for i in range(7):
+                forecast_day = datetime.combine(
+                    base_date + timedelta(days=i + 1),
+                    now.time()
+                )
+                forecast_times.append(
+                    forecast_day + random_future_offset(150, 270)
+                )
+
+        else:  # Next Month
+            # Thirty daily forecasts. Times vary more widely than shorter forecasts.
+            forecast_times = []
+            for i in range(30):
+                forecast_day = datetime.combine(
+                    base_date + timedelta(days=i + 1),
+                    now.time()
+                )
+                forecast_times.append(
+                    forecast_day + random_future_offset(180, 360)
+                )
+
         forecast_time = forecast_times[-1]
+
         if len(forecast_times) == 1:
-            forecast_range_text = forecast_times[0].strftime('%d %B %Y %H:%M')
+            forecast_range_text = forecast_times[0].strftime(
+                "%d %B %Y %H:%M"
+            )
         else:
             forecast_range_text = (
                 f"{forecast_times[0].strftime('%d %B %Y %H:%M')} to "
