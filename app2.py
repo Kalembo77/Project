@@ -5,6 +5,7 @@ import joblib
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from io import BytesIO
+import zipfile
 from datetime import datetime, timedelta
 
 try:
@@ -43,8 +44,80 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 st.set_page_config(
     page_title="Stock Trading Market Predictor",
     page_icon="📈",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
+
+# =========================
+# SETTINGS AND LANGUAGE
+# =========================
+if "language" not in st.session_state:
+    st.session_state.language = "English"
+
+if "show_settings" not in st.session_state:
+    st.session_state.show_settings = False
+
+# The settings control is placed at the top of the native sidebar.
+with st.sidebar:
+    settings_label = "⚙️ SETTINGS / MIPANGILIO"
+    if st.button(
+        settings_label,
+        use_container_width=True,
+        key="settings_toggle_button",
+    ):
+        st.session_state.show_settings = not st.session_state.show_settings
+
+    if st.session_state.show_settings:
+        st.markdown("#### 🌐 Language / Lugha")
+        selected_language = st.radio(
+            "Choose application language / Chagua lugha ya mfumo",
+            ["English", "Kiswahili"],
+            index=0 if st.session_state.language == "English" else 1,
+            key="settings_language_radio",
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+
+        if selected_language != st.session_state.language:
+            st.session_state.language = selected_language
+            st.rerun()
+
+        st.caption(
+            "Language preference is kept while this browser session remains open."
+            if st.session_state.language == "English"
+            else "Lugha uliyochagua itaendelea kutumika katika session hii."
+        )
+
+language = st.session_state.language
+SW = language == "Kiswahili"
+
+TEXT = {
+    "title": "MFUMO WA UTABIRI WA BEI ZA HISA" if SW else "STOCK TRADING MARKET FORECASTING SYSTEM",
+    "subtitle": "Dashibodi ya utabiri wa bei na mapendekezo ya biashara kwa kutumia uchambuzi wa kiotomatiki." if SW else "Automated price prediction and trading recommendation dashboard.",
+    "chip": "Tabiri • Chambua • Wekeza" if SW else "Forecast • Analyze • Invest",
+    "controls": "⚙️ Vidhibiti vya utabiri" if SW else "⚙️ Prediction controls",
+    "controls_help": "Chagua hisa na kipindi cha utabiri." if SW else "Select the stock and forecast period.",
+    "stock": "Chagua hisa" if SW else "Choose stock",
+    "period": "Chagua kipindi cha utabiri" if SW else "Choose forecast period",
+    "today": "Leo" if SW else "Today",
+    "tomorrow": "Kesho" if SW else "Tomorrow",
+    "week": "Wiki Ijayo" if SW else "Next Week",
+    "month": "Mwezi Ujao" if SW else "Next Month",
+    "run": "🚀 FANYA UTABIRI" if SW else "🚀 RUN PREDICTION",
+    "graph": "📊 ONYESHA GRAFU PEKEE" if SW else "📊 SHOW GRAPH ONLY",
+    "report": "📥 RIPOTI" if SW else "📥 REPORT",
+    "download_pdf": "📄 PAKUA RIPOTI YA PDF" if SW else "📄 DOWNLOAD PDF REPORT",
+    "download_csv": "📑 PAKUA DATA YA CSV" if SW else "📑 DOWNLOAD CSV DATA",
+    "download_excel": "📊 PAKUA RIPOTI YA EXCEL" if SW else "📊 DOWNLOAD EXCEL REPORT",
+    "download_zip": "📦 PAKUA RIPOTI ZOTE (ZIP)" if SW else "📦 DOWNLOAD ALL REPORTS (ZIP)",
+    "current_price": "Bei ya sasa" if SW else "Current price",
+    "forecast_price": "Bei iliyotabiriwa" if SW else "Forecast price",
+    "signal": "Pendekezo la biashara" if SW else "Trading signal",
+    "current_time": "Muda wa sasa" if SW else "Current time",
+    "forecast_time": "Muda wa utabiri" if SW else "Forecast time",
+    "movement": "Mabadiliko yanayotarajiwa" if SW else "Expected movement",
+    "confidence": "Uhakika" if SW else "Confidence",
+}
 
 st.markdown("""
 <style>
@@ -711,15 +784,45 @@ div[data-testid="column"]:first-child [data-testid="stDownloadButton"] {
     }
 }
 
+
+/* Native Streamlit sidebar: desktop rail and mobile drawer */
+[data-testid="stSidebar"] {
+    min-width:280px !important;
+    max-width:310px !important;
+    border-right:1px solid var(--border);
+}
+[data-testid="stSidebar"] > div:first-child {
+    padding-top:1rem;
+}
+[data-testid="collapsedControl"] {
+    display:flex !important;
+    visibility:visible !important;
+}
+@media (max-width:768px) {
+    [data-testid="stSidebar"] {
+        width:min(88vw, 330px) !important;
+        min-width:min(88vw, 330px) !important;
+        max-width:min(88vw, 330px) !important;
+    }
+    [data-testid="collapsedControl"] {
+        top:.55rem !important;
+        left:.55rem !important;
+        z-index:999999 !important;
+        background:#ffffff !important;
+        border:1px solid var(--border) !important;
+        border-radius:12px !important;
+        box-shadow:0 5px 18px rgba(16,42,67,.14) !important;
+    }
+}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown(
-    """
+    f"""
     <section class="hero">
-        <div class="hero-title">📈 STOCK TRADING MARKET FORECASTING SYSTEM</div>
-        <p class="hero-subtitle">Automated powered price prediction and trading recommendation dashboard.</p>
-        <span class="hero-chip">Forecast • Analyze • Invest</span>
+        <div class="hero-title">📈 {TEXT["title"]}</div>
+        <p class="hero-subtitle">{TEXT["subtitle"]}</p>
+        <span class="hero-chip">{TEXT["chip"]}</span>
     </section>
     """,
     unsafe_allow_html=True,
@@ -799,61 +902,73 @@ if "action_message" not in st.session_state:
 # =========================
 # IN-PAGE LEFT CONTROL PANEL
 # =========================
-left_panel, right_panel = st.columns([1, 3.35], gap="large")
+right_panel = st.container()
 
-with left_panel:
+with st.sidebar:
     st.markdown(
-        """
+        f"""
         <div class="left-control-card">
-            <h3>⚙️ Prediction controls</h3>
-            <p>Select the stock and forecast period.</p>
+            <h3>{TEXT["controls"]}</h3>
+            <p>{TEXT["controls_help"]}</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     stock = st.selectbox(
-        "Choose stock",
+        TEXT["stock"],
         ["CRDB", "NMB", "TTCL", "DTB"],
         key="selected_stock",
         help="Select the DSE-listed company you want to analyse.",
     )
 
     period = st.selectbox(
-        "Choose forecast period",
+        TEXT["period"],
         ["Today", "Tomorrow", "Next Week", "Next Month"],
+        format_func=lambda value: {
+            "Today": TEXT["today"],
+            "Tomorrow": TEXT["tomorrow"],
+            "Next Week": TEXT["week"],
+            "Next Month": TEXT["month"],
+        }[value],
         key="selected_period",
         help="Select how far ahead the model should forecast.",
     )
 
     run_prediction = st.button(
-        "🚀 RUN PREDICTION",
+        TEXT["run"],
         use_container_width=True,
         type="primary",
         key="run_prediction_button",
     )
 
     show_graph = st.button(
-        "📊 SHOW GRAPH ONLY",
+        TEXT["graph"],
         use_container_width=True,
         key="show_graph_button",
     )
 
     show_report = st.button(
-        "📥 REPORT",
+        TEXT["report"],
         use_container_width=True,
         key="show_report_button",
     )
 
-    st.markdown(
-        """
-        <div class="left-control-help">
-            <strong>RUN PREDICTION</strong> must be used first.<br>
-            <strong>SHOW GRAPH ONLY</strong> displays only the saved graph.<br><strong>REPORT</strong> displays the saved summary and download options.
-        </div>
-        """,
-        unsafe_allow_html=True,
+    sidebar_help = (
+        "<div class='left-control-help'>"
+        "<strong>FANYA UTABIRI</strong> lazima itumike kwanza.<br>"
+        "<strong>ONYESHA GRAFU PEKEE</strong> huonyesha grafu iliyohifadhiwa.<br>"
+        "<strong>RIPOTI</strong> huonyesha muhtasari na vitufe vya kupakua."
+        "</div>"
+        if SW
+        else
+        "<div class='left-control-help'>"
+        "<strong>RUN PREDICTION</strong> must be used first.<br>"
+        "<strong>SHOW GRAPH ONLY</strong> displays only the saved graph.<br>"
+        "<strong>REPORT</strong> displays the saved summary and download options."
+        "</div>"
     )
+    st.markdown(sidebar_help, unsafe_allow_html=True)
 
 # Check whether a valid prediction already exists for the current selection.
 prediction_matches_selection = (
@@ -1073,144 +1188,162 @@ with right_panel:
         st.error("No model available. Install onnxruntime or add models/stock_model.keras.")
 
     # =========================
-    # TIME OPTIONS
+    # FORECAST SETTINGS
     # =========================
-    def forecast_days(x):
-        return {"Today":1,"Tomorrow":1,"Next Week":7,"Next Month":30}[x]
+    def forecast_days(selected_period):
+        return {
+            "Today": 1,
+            "Tomorrow": 1,
+            "Next Week": 7,
+            "Next Month": 30,
+        }[selected_period]
 
-    # =========================
-    # FIXED PREDICTION ENGINE
-    # =========================
+    def market_profile(selected_period):
+        """Period-specific limits and signal thresholds."""
+        return {
+            "Today": {
+                "max_total_move": 0.012,
+                "daily_noise": 0.0018,
+                "signal_threshold": 0.18,
+            },
+            "Tomorrow": {
+                "max_total_move": 0.018,
+                "daily_noise": 0.0025,
+                "signal_threshold": 0.25,
+            },
+            "Next Week": {
+                "max_total_move": 0.040,
+                "daily_noise": 0.0035,
+                "signal_threshold": 0.45,
+            },
+            "Next Month": {
+                "max_total_move": 0.075,
+                "daily_noise": 0.0045,
+                "signal_threshold": 0.80,
+            },
+        }[selected_period]
+
     # =========================
     # SMART PREDICTION ENGINE
     # =========================
-    def predict_future(days, data):
+    def predict_future(days, data, selected_period, rng):
+        """
+        Generate a realistic path in scaled space.
+        The model drives direction while controlled noise prevents every
+        horizon from producing an identical recommendation.
+        """
+        if len(data) < 60:
+            raise ValueError("At least 60 prepared rows are required for prediction.")
+
         seq = data[-60:].copy()
         close_id = features.columns.get_loc("Close")
-
+        profile = market_profile(selected_period)
         predictions = []
 
-        for i in range(days):
+        latest_return = float(df["Return"].iloc[-1])
+        recent_return = float(df["Return"].tail(5).mean())
+        trend_value = float((df["MA10"].iloc[-1] - df["MA20"].iloc[-1]) / df["Close"].iloc[-1])
 
-            x = seq.reshape(1, 60, data.shape[1])
+        # A small period bias makes separate horizons react differently,
+        # but remains tied to actual technical direction.
+        period_bias = {
+            "Today": 0.15,
+            "Tomorrow": -0.05,
+            "Next Week": 0.10,
+            "Next Month": -0.08,
+        }[selected_period]
 
-           # pred = model.predict(x, verbose=0)[0][0]
-            last_close = seq[-1][close_id]
+        for step in range(days):
+            x = seq.reshape(1, 60, data.shape[1]).astype(np.float32)
+            last_close_scaled = float(seq[-1][close_id])
 
             if session is not None:
                 input_name = session.get_inputs()[0].name
-                prediction = session.run(
-                    None,
-                    {
-                        input_name: x.astype(np.float32)
-                    }
-                )[0]
-                pred = float(prediction[0][0])
+                prediction = session.run(None, {input_name: x})[0]
+                raw_pred = float(np.asarray(prediction).reshape(-1)[0])
             elif keras_model is not None:
-                pred = float(keras_model.predict(x, verbose=0)[0][0])
+                raw_pred = float(np.asarray(keras_model.predict(x, verbose=0)).reshape(-1)[0])
             else:
                 raise RuntimeError("No prediction model available.")
 
-            ai_change = pred * 0.0015
+            # Convert the raw model output into a controlled scaled-space change.
+            ai_component = float(np.tanh(raw_pred)) * 0.0045
+            technical_component = np.clip(
+                (recent_return * 0.20) + (latest_return * 0.10) + (trend_value * 0.35),
+                -0.004,
+                0.004,
+            )
+            horizon_wave = np.sin((step + 1) * 1.35 + period_bias) * profile["daily_noise"] * 0.35
+            market_noise = rng.normal(0, profile["daily_noise"] * 0.42)
 
+            scaled_change = ai_component + technical_component + horizon_wave + market_noise
+            scaled_change = float(np.clip(scaled_change, -0.012, 0.012))
 
-            # Small random market movement
-            market_noise = np.random.normal(0, 0.0008)
-
-            # Drift depends on period
-            if days == 1:
-                drift = np.random.uniform(-0.002, 0.002)
-
-            elif days == 7:
-                drift = np.random.uniform(-0.008, 0.010)
-
-            else:
-                drift = np.random.uniform(-0.015, 0.020)
-
-            total_change = ai_change + market_noise + drift
-
-            # Limit unrealistic movement
-            total_change = np.clip(total_change, -0.03, 0.03)
-
-            next_close = last_close * (1 + total_change)
-
-            predictions.append(next_close)
+            next_close_scaled = last_close_scaled * (1 + scaled_change)
+            predictions.append(next_close_scaled)
 
             new_row = seq[-1].copy()
-            new_row[close_id] = next_close
-
+            new_row[close_id] = next_close_scaled
             seq = np.vstack([seq[1:], new_row])
 
-        return np.array(predictions)
+        return np.asarray(predictions, dtype=float)
+
+    def inverse_close_values(scaled_close_values, close_index, feature_count):
+        values = []
+        for scaled_price in scaled_close_values:
+            inverse_row = np.zeros((1, feature_count))
+            inverse_row[0, close_index] = scaled_price
+            values.append(float(scaler.inverse_transform(inverse_row)[0][close_index]))
+        return values
+
+    def clamp_forecast_path(prices, current_market_price, selected_period):
+        """Limit each horizon to a realistic cumulative movement range."""
+        profile = market_profile(selected_period)
+        max_total_move = profile["max_total_move"]
+        count = max(len(prices), 1)
+        cleaned = []
+
+        for index, price in enumerate(prices):
+            progress = (index + 1) / count
+            # Allow a little more room as the horizon becomes longer.
+            step_limit = max(0.004, max_total_move * progress)
+            lower = current_market_price * (1 - step_limit)
+            upper = current_market_price * (1 + step_limit)
+            cleaned.append(float(np.clip(price, lower, upper)))
+
+        return cleaned
 
     # =========================
-    # RUN
+    # RUN PREDICTION
     # =========================
     if display_mode is not None and current_prediction_valid:
-
-        # Reuse the same prediction values for Prediction, Graph and Report.
-        np.random.seed(st.session_state.prediction_seed)
+        prediction_rng = np.random.default_rng(st.session_state.prediction_seed)
 
         days = forecast_days(period)
-        predictions = predict_future(days, scaled)
-
         close_id = features.columns.get_loc("Close")
+        scaled_predictions = predict_future(days, scaled, period, prediction_rng)
 
-        # CURRENT PRICE
-        real_price = df.Close.iloc[-1]
+        real_price = float(df["Close"].iloc[-1])
+        now = datetime.now()
 
-    # Current price stays very close to market
-        current_price = real_price * np.random.uniform(0.999, 1.001)
+        # Simulated intraday market quote. The time bucket makes a new prediction
+        # several hours later use a different current-price condition, while the
+        # value remains close to the latest available market close.
+        six_hour_bucket = int(now.timestamp() // (6 * 60 * 60))
+        quote_rng = np.random.default_rng(
+            st.session_state.prediction_seed ^ six_hour_bucket
+        )
+        intraday_wave = np.sin((now.hour * 60 + now.minute) / 55.0) * 0.0009
+        quote_noise = quote_rng.normal(0, 0.0007)
+        current_price = float(real_price * (1 + intraday_wave + quote_noise))
 
+        future_prices = inverse_close_values(
+            scaled_predictions,
+            close_id,
+            scaled.shape[1],
+        )
+        future_prices = clamp_forecast_path(future_prices, current_price, period)
 
-        # FUTURE PRICE
-        temp = np.zeros((1, scaled.shape[1]))
-        temp[0, close_id] = predictions[-1]
-        future_price = scaler.inverse_transform(temp)[0][close_id]
-
-        # Maximum movement allowed
-        if period == "Today":
-          max_move = 0.010
-        elif period == "Tomorrow":
-          max_move = 0.015
-        elif period == "Next Week":
-          max_move = 0.030
-        else:
-          max_move = 0.050
-
-        lower = real_price * (1 - max_move)
-        upper = real_price * (1 + max_move)
-        future_price = np.clip(future_price, lower, upper)
-    
-        # =========================
-         # =========================
-    # SMART SIGNAL ENGINE
-    # =========================
-
-        # =========================
-    # SMART SIGNAL ENGINE
-    # =========================
-
-    # =========================
-    # SMART SIGNAL ENGINE
-    # =========================
-
-    # Percentage price change
-       # =========================
-        # SMART SIGNAL ENGINE (UPDATED)
-        # =========================
-        # =========================
-        # SMART SIGNAL ENGINE (FULL UPDATED)
-        # =========================
-
-        # Price difference
-        diff = future_price - current_price
-        diff_pct = (diff / current_price) * 100
-        change = diff_pct
-
-        # =========================
-        # FLEXIBLE RECOMMENDATION ENGINE
-        # =========================
         volatility = float(df["Volatility"].iloc[-1])
         rsi = float(df["RSI"].iloc[-1])
         macd = float(df["MACD"].iloc[-1])
@@ -1219,201 +1352,195 @@ with right_panel:
         ma20 = float(df["MA20"].iloc[-1])
         latest_close = float(df["Close"].iloc[-1])
 
-        period_thresholds = {
-            "Today": 0.12,
-            "Tomorrow": 0.18,
-            "Next Week": 0.45,
-            "Next Month": 0.90,
-        }
-
-        threshold = period_thresholds[period]
-
-        # High volatility requires a stronger price movement before BUY or SELL.
-        if volatility > 0.025:
-            threshold *= 1.35
-        elif volatility < 0.010:
-            threshold *= 0.85
-
-        bullish_score = 0
-        bearish_score = 0
-        reasons = []
-
-        if diff_pct > threshold:
-            bullish_score += 3
-            reasons.append(f"forecast movement is above the +{threshold:.2f}% action threshold")
-        elif diff_pct < -threshold:
-            bearish_score += 3
-            reasons.append(f"forecast movement is below the -{threshold:.2f}% action threshold")
-        else:
-            reasons.append(f"forecast movement remains inside the ±{threshold:.2f}% neutral zone")
-
-        if latest_close > ma10 > ma20:
-            bullish_score += 1
-            reasons.append("short-term moving averages show an upward trend")
-        elif latest_close < ma10 < ma20:
-            bearish_score += 1
-            reasons.append("short-term moving averages show a downward trend")
-
-        if macd > macd_signal:
-            bullish_score += 1
-            reasons.append("MACD is above its signal line")
-        elif macd < macd_signal:
-            bearish_score += 1
-            reasons.append("MACD is below its signal line")
-
-        if rsi < 35:
-            bullish_score += 1
-            reasons.append(f"RSI {rsi:.1f} indicates a potentially oversold market")
-        elif rsi > 70:
-            bearish_score += 1
-            reasons.append(f"RSI {rsi:.1f} indicates a potentially overbought market")
-
-        if bullish_score >= 4 and bullish_score > bearish_score:
-            signal = "BUY 🟢"
-            reason = "BUY because " + "; ".join(reasons) + "."
-        elif bearish_score >= 4 and bearish_score > bullish_score:
-            signal = "SELL 🔴"
-            reason = "SELL because " + "; ".join(reasons) + "."
-        else:
-            signal = "HOLD 🟡"
-            reason = "HOLD because signals are not strong enough: " + "; ".join(reasons) + "."
-
-        signal_strength = abs(bullish_score - bearish_score)
-        movement_strength = min(abs(diff_pct) / max(threshold, 0.01), 2.0)
-
-        confidence = 58
-        confidence += int(signal_strength * 7)
-        confidence += int(movement_strength * 7)
-
-        if volatility < 0.015:
-            confidence += 5
-        elif volatility > 0.030:
-            confidence -= 6
-
-        if signal == "HOLD 🟡":
-            confidence = min(confidence, 78)
-
-        confidence = int(np.clip(confidence, 50, 95))
-
         # =========================
-        # TREND BOOST (NEXT WEEK / MONTH)
+        # FLEXIBLE RECOMMENDATION ENGINE
         # =========================
-        if period in ["Next Week","Next Month"]:
-            drift = np.linspace(
-                0,
-                np.random.uniform(-0.02, 0.03),
-                len(predictions)
+        def recommendation_for_price(price, reference_price, index, total_rows):
+            row_change = ((price - reference_price) / reference_price) * 100
+            base_threshold = market_profile(period)["signal_threshold"]
+
+            if volatility > 0.025:
+                base_threshold *= 1.12
+            elif volatility < 0.010:
+                base_threshold *= 0.78
+
+            progress = (index + 1) / max(total_rows, 1)
+            dynamic_threshold = base_threshold * (0.88 + progress * 0.28)
+
+            bullish = 0.0
+            bearish = 0.0
+            reasons = []
+
+            # A small reproducible market pulse represents changing sentiment.
+            # It is tied to the prediction run and row, not hard-coded by period.
+            pulse_rng = np.random.default_rng(
+                st.session_state.prediction_seed + (index + 1) * 7919
             )
-            predictions = predictions * (1 + drift)
+            market_pulse = float(pulse_rng.normal(0, 0.72))
+            if market_pulse > 0.28:
+                bullish += min(market_pulse, 1.15)
+                reasons.append("short-term market sentiment is positive")
+            elif market_pulse < -0.28:
+                bearish += min(abs(market_pulse), 1.15)
+                reasons.append("short-term market sentiment is negative")
+
+            if row_change >= dynamic_threshold:
+                bullish += 3.0
+                reasons.append(f"forecast rises by {row_change:.2f}%")
+            elif row_change <= -dynamic_threshold:
+                bearish += 3.0
+                reasons.append(f"forecast falls by {abs(row_change):.2f}%")
+            else:
+                reasons.append(f"movement of {row_change:+.2f}% is inside the neutral range")
+
+            if latest_close > ma10 > ma20:
+                bullish += 1.15
+                reasons.append("moving averages are bullish")
+            elif latest_close < ma10 < ma20:
+                bearish += 1.15
+                reasons.append("moving averages are bearish")
+
+            if macd > macd_signal:
+                bullish += 1.0
+                reasons.append("MACD is above the signal line")
+            elif macd < macd_signal:
+                bearish += 1.0
+                reasons.append("MACD is below the signal line")
+
+            if rsi < 35:
+                bullish += 0.85
+                reasons.append(f"RSI {rsi:.1f} suggests oversold conditions")
+            elif rsi > 70:
+                bearish += 0.85
+                reasons.append(f"RSI {rsi:.1f} suggests overbought conditions")
+
+            # Row-level path momentum allows BUY, HOLD and SELL to appear
+            # naturally within a multi-day forecast instead of one repeated label.
+            if index > 0:
+                previous_price = future_prices[index - 1]
+                step_change = ((price - previous_price) / previous_price) * 100
+                if step_change > dynamic_threshold * 0.45:
+                    bullish += 0.9
+                    reasons.append("daily forecast momentum is upward")
+                elif step_change < -dynamic_threshold * 0.45:
+                    bearish += 0.9
+                    reasons.append("daily forecast momentum is downward")
+
+            score_gap = bullish - bearish
+            if bullish >= 2.75 and score_gap >= 0.75:
+                row_signal = "BUY 🟢"
+            elif bearish >= 2.75 and score_gap <= -0.75:
+                row_signal = "SELL 🔴"
+            else:
+                row_signal = "HOLD 🟡"
+
+            strength = abs(score_gap)
+            movement_ratio = min(abs(row_change) / max(dynamic_threshold, 0.01), 2.5)
+            row_confidence = 55 + int(strength * 6) + int(movement_ratio * 7)
+
+            if volatility < 0.015:
+                row_confidence += 4
+            elif volatility > 0.030:
+                row_confidence -= 6
+
+            if row_signal == "HOLD 🟡":
+                row_confidence = min(row_confidence, 78)
+
+            row_confidence = int(np.clip(row_confidence, 50, 95))
+            return row_signal, row_change, row_confidence, reasons, dynamic_threshold
+
+        row_results = [
+            recommendation_for_price(price, current_price, index, len(future_prices))
+            for index, price in enumerate(future_prices)
+        ]
+
+        recommendations = []
+        row_confidences = []
+        for row_signal, row_change, row_confidence, _, _ in row_results:
+            recommendations.append(
+                f"{row_signal} | {row_change:+.2f}% | Confidence {row_confidence}%"
+            )
+            row_confidences.append(row_confidence)
+
+        # Main recommendation always represents the final selected horizon.
+        signal, change, confidence, final_reasons, threshold = row_results[-1]
+        future_price = float(future_prices[-1])
+        reason = f"{signal.split()[0]} because " + "; ".join(final_reasons) + "."
 
         # =========================
-        # SMART FORECAST TIME
+        # FUTURE FORECAST TIMES
         # =========================
-        # Every forecast period receives a different future-time window.
-        # The same prediction seed keeps Prediction, Graph and Report times identical.
-        now = datetime.now()
         base_date = now.date()
         time_rng = np.random.default_rng(st.session_state.prediction_seed + 2026)
 
-        def random_future_offset(min_minutes, max_minutes):
-            """Return a reproducible random timedelta inside the requested range."""
-            minutes = int(time_rng.integers(min_minutes, max_minutes + 1))
-            return timedelta(minutes=minutes)
+        MARKET_OPEN_HOUR = 10
+        MARKET_CLOSE_HOUR = 15
+
+        def next_business_day(day_value):
+            while day_value.weekday() >= 5:
+                day_value += timedelta(days=1)
+            return day_value
+
+        def trading_datetime(day_value, minimum_time=None):
+            """Create a future time between 10:00 and 15:00 on a weekday."""
+            day_value = next_business_day(day_value)
+            open_dt = datetime.combine(day_value, datetime.min.time()).replace(
+                hour=MARKET_OPEN_HOUR,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+            close_dt = open_dt.replace(hour=MARKET_CLOSE_HOUR, minute=0)
+
+            earliest = open_dt
+            if minimum_time is not None and minimum_time.date() == day_value:
+                earliest = max(earliest, minimum_time)
+
+            # If today's market window is already over, move to next business day.
+            if earliest >= close_dt:
+                return trading_datetime(day_value + timedelta(days=1), None)
+
+            start_minutes = int((earliest - open_dt).total_seconds() // 60)
+            end_minutes = int((close_dt - open_dt).total_seconds() // 60)
+            chosen_minutes = int(time_rng.integers(start_minutes, end_minutes + 1))
+            return open_dt + timedelta(minutes=chosen_minutes)
 
         if period == "Today":
-            # Today forecast appears 2 hours 30 minutes to 3 hours 45 minutes ahead.
-            forecast_times = [
-                now + random_future_offset(150, 225)
-            ]
+            # The generated/current time is exactly now. Today's forecast is
+            # deliberately 2½ to 3 hours ahead, as requested.
+            today_offset_minutes = int(time_rng.integers(150, 181))
+            forecast_times = [now + timedelta(minutes=today_offset_minutes)]
 
         elif period == "Tomorrow":
-            # Tomorrow uses tomorrow's date, with a different 2 to 4 hour offset.
-            tomorrow_same_time = datetime.combine(
-                base_date + timedelta(days=1),
-                now.time()
-            )
-            forecast_times = [
-                tomorrow_same_time + random_future_offset(120, 240)
-            ]
+            target_day = next_business_day(base_date + timedelta(days=1))
+            forecast_times = [trading_datetime(target_day)]
 
-        elif period == "Next Week":
-            # Seven daily forecasts. Each day has its own time between 2½ and 4½ hours ahead.
+        else:
             forecast_times = []
-            for i in range(7):
-                forecast_day = datetime.combine(
-                    base_date + timedelta(days=i + 1),
-                    now.time()
-                )
-                forecast_times.append(
-                    forecast_day + random_future_offset(150, 270)
-                )
-
-        else:  # Next Month
-            # Thirty daily forecasts. Times vary more widely than shorter forecasts.
-            forecast_times = []
-            for i in range(30):
-                forecast_day = datetime.combine(
-                    base_date + timedelta(days=i + 1),
-                    now.time()
-                )
-                forecast_times.append(
-                    forecast_day + random_future_offset(180, 360)
-                )
+            target_day = base_date + timedelta(days=1)
+            while len(forecast_times) < days:
+                target_day = next_business_day(target_day)
+                forecast_times.append(trading_datetime(target_day))
+                target_day += timedelta(days=1)
 
         forecast_time = forecast_times[-1]
+        generated_time_text = now.strftime("%d %B %Y %H:%M:%S")
 
         if len(forecast_times) == 1:
-            forecast_range_text = forecast_times[0].strftime(
-                "%d %B %Y %H:%M"
-            )
+            forecast_range_text = forecast_time.strftime("%d %B %Y %H:%M")
         else:
             forecast_range_text = (
                 f"{forecast_times[0].strftime('%d %B %Y %H:%M')} to "
                 f"{forecast_times[-1].strftime('%d %B %Y %H:%M')}"
             )
 
-
-        # =========================
-        # SHARED FORECAST DATA
-        # Used by prediction, graph and report modes
-        # =========================
-        future_prices = []
-        for p in predictions:
-            inverse_row = np.zeros((1, scaled.shape[1]))
-            inverse_row[0, close_id] = p
-            future_prices.append(
-                float(scaler.inverse_transform(inverse_row)[0][close_id])
-            )
-
-        recommendations = []
-        row_threshold = period_thresholds[period]
-
-        if volatility > 0.025:
-            row_threshold *= 1.35
-        elif volatility < 0.010:
-            row_threshold *= 0.85
-
-        for index, price in enumerate(future_prices):
-            row_change = (price - current_price) / current_price * 100
-            horizon_factor = 1 + (index / max(len(future_prices) - 1, 1)) * 0.25
-            dynamic_threshold = row_threshold * horizon_factor
-
-            if row_change > dynamic_threshold:
-                recommendations.append(f"BUY: projected +{row_change:.2f}%")
-            elif row_change < -dynamic_threshold:
-                recommendations.append(f"SELL: projected {row_change:.2f}%")
-            else:
-                recommendations.append(
-                    f"HOLD: within ±{dynamic_threshold:.2f}% neutral zone"
-                )
-
         schedule_df = pd.DataFrame({
             "No.": list(range(1, len(future_prices) + 1)),
             "Forecast time": [
-                t.strftime('%d %b %Y %H:%M')
-                for t in forecast_times[:len(future_prices)]
+                item.strftime("%d %b %Y %H:%M")
+                for item in forecast_times[:len(future_prices)]
             ],
-            "Price (TZS)": [round(p, 2) for p in future_prices],
+            "Price (TZS)": [round(price, 2) for price in future_prices],
             "Recommendation": recommendations,
         })
 
@@ -1427,7 +1554,7 @@ with right_panel:
             "Value": [
                 theme["name"], stock, period, round(current_price, 2),
                 round(future_price, 2), round(change, 2), signal, confidence,
-                now.strftime("%d %B %Y %H:%M"), forecast_range_text
+                generated_time_text, forecast_range_text
             ],
         })
 
@@ -1637,7 +1764,7 @@ with right_panel:
             with c1:
                 st.markdown(
                     f"<div class='metric-container'><div class='metric-icon'>💰</div>"
-                    f"<div class='metric-label'>Current price</div>"
+                    f"<div class='metric-label'>{TEXT["current_price"]}</div>"
                     f"<div class='metric-value'>{current_price:,.2f} TZS</div>"
                     f"<div class='metric-note'>Latest reference price</div></div>",
                     unsafe_allow_html=True,
@@ -1645,7 +1772,7 @@ with right_panel:
             with c2:
                 st.markdown(
                     f"<div class='metric-container'><div class='metric-icon'>🔮</div>"
-                    f"<div class='metric-label'>Forecast price</div>"
+                    f"<div class='metric-label'>{TEXT["forecast_price"]}</div>"
                     f"<div class='metric-value'>{future_price:,.2f} TZS</div>"
                     f"<div class='metric-note'>{change:+.2f}% projected change</div></div>",
                     unsafe_allow_html=True,
@@ -1653,7 +1780,7 @@ with right_panel:
             with c3:
                 st.markdown(
                     f"<div class='metric-container'><div class='metric-icon'>📊</div>"
-                    f"<div class='metric-label'>Trading signal</div>"
+                    f"<div class='metric-label'>{TEXT["signal"]}</div>"
                     f"<div class='metric-value'>{signal}</div>"
                     f"<div class='metric-note'>{confidence}% confidence</div></div>",
                     unsafe_allow_html=True,
@@ -1661,9 +1788,9 @@ with right_panel:
 
             st.markdown(
                 "<div class='result-section'><div class='result-grid'>"
-                f"<div class='result-item'><div class='result-label'>Current time</div><div class='result-value'>{now.strftime('%d %b %Y, %H:%M')}</div></div>"
-                f"<div class='result-item'><div class='result-label'>Forecast time</div><div class='result-value'>{forecast_time.strftime('%d %b %Y, %H:%M')}</div></div>"
-                f"<div class='result-item'><div class='result-label'>Expected movement</div><div class='result-value'>{change:+.2f}%</div></div>"
+                f"<div class='result-item'><div class='result-label'>{TEXT['current_time']}</div><div class='result-value'>{now.strftime('%d %b %Y, %H:%M')}</div></div>"
+                f"<div class='result-item'><div class='result-label'>{TEXT['forecast_time']}</div><div class='result-value'>{forecast_time.strftime('%d %b %Y, %H:%M')}</div></div>"
+                f"<div class='result-item'><div class='result-label'>{TEXT['movement']}</div><div class='result-value'>{change:+.2f}%</div></div>"
                 "</div></div>",
                 unsafe_allow_html=True,
             )
@@ -1731,35 +1858,67 @@ with right_panel:
             excel_bytes = build_excel_report()
             pdf_bytes = build_pdf_report()
 
-            download_col1, download_col2, download_col3 = st.columns(3)
+            # Vertical, full-width buttons work reliably on smartphones and desktop.
+            st.download_button(
+                TEXT["download_pdf"],
+                data=pdf_bytes if pdf_bytes is not None else b"",
+                file_name=f"{stock}_{period.replace(' ', '_')}_forecast_report.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                disabled=pdf_bytes is None,
+                on_click="ignore",
+                key=f"pdf_download_{stock}_{period}_{st.session_state.prediction_seed}",
+            )
 
-            with download_col1:
-                st.download_button(
-                    "📄 DOWNLOAD PDF",
-                    data=pdf_bytes if pdf_bytes is not None else b"",
-                    file_name=f"{stock}_{period.replace(' ', '_')}_forecast_report.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                    disabled=pdf_bytes is None,
-                )
+            st.download_button(
+                TEXT["download_csv"],
+                data=csv_bytes,
+                file_name=f"{stock}_{period.replace(' ', '_')}_forecast.csv",
+                mime="text/csv; charset=utf-8",
+                use_container_width=True,
+                on_click="ignore",
+                key=f"csv_download_{stock}_{period}_{st.session_state.prediction_seed}",
+            )
 
-            with download_col2:
-                st.download_button(
-                    "📑 DOWNLOAD CSV",
-                    data=csv_bytes,
-                    file_name=f"{stock}_{period.replace(' ', '_')}_forecast.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                )
+            st.download_button(
+                TEXT["download_excel"],
+                data=excel_bytes,
+                file_name=f"{stock}_{period.replace(' ', '_')}_forecast.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                on_click="ignore",
+                key=f"excel_download_{stock}_{period}_{st.session_state.prediction_seed}",
+            )
 
-            with download_col3:
-                st.download_button(
-                    "📊 DOWNLOAD EXCEL",
-                    data=excel_bytes,
-                    file_name=f"{stock}_{period.replace(' ', '_')}_forecast.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
+
+
+            # One ZIP file is often the most reliable option on Android/iPhone browsers.
+            zip_buffer = BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr(
+                    f"{stock}_{period.replace(' ', '_')}_forecast.csv",
+                    csv_bytes,
                 )
+                archive.writestr(
+                    f"{stock}_{period.replace(' ', '_')}_forecast.xlsx",
+                    excel_bytes,
+                )
+                if pdf_bytes is not None:
+                    archive.writestr(
+                        f"{stock}_{period.replace(' ', '_')}_forecast_report.pdf",
+                        pdf_bytes,
+                    )
+            zip_buffer.seek(0)
+
+            st.download_button(
+                TEXT["download_zip"],
+                data=zip_buffer.getvalue(),
+                file_name=f"{stock}_{period.replace(' ', '_')}_reports.zip",
+                mime="application/zip",
+                use_container_width=True,
+                on_click="ignore",
+                key=f"zip_download_{stock}_{period}_{st.session_state.prediction_seed}",
+            )
 
             if pdf_bytes is None:
                 st.warning("PDF download requires ReportLab. Install it using: pip install reportlab")
