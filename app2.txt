@@ -1,9 +1,15 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
+import os
+import zipfile
+from io import BytesIO
+from datetime import datetime, timedelta
+
 import joblib
 import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
+import numpy as np
+import pandas as pd
+import streamlit as st
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 try:
     from tensorflow.keras.models import load_model as keras_load_model
@@ -15,717 +21,936 @@ except Exception:
 
 try:
     import onnxruntime as ort
-except Exception:  # ImportError or module not found
+except Exception:
     ort = None
-import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-# =========================
-# CONFIG
-# =========================
-#st.set_page_config(page_title="CRDB STOCK MARKET PREDICTOR", layout="wide")
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    REPORTLAB_AVAILABLE = True
+except Exception:
+    REPORTLAB_AVAILABLE = False
 
+
+# =====================================================
+# PAGE CONFIG
+# =====================================================
 st.set_page_config(
     page_title="Stock Trading Prediction",
     page_icon="📈",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-st.markdown("""
+
+# =====================================================
+# SESSION STATE
+# =====================================================
+DEFAULTS = {
+    "language": "English",
+    "show_settings": False,
+    "prediction": None,
+    "report_open": False,
+}
+for key, value in DEFAULTS.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+# =====================================================
+# LANGUAGE
+# =====================================================
+TEXT = {
+    "English": {
+        "title": "STOCK TRADING MARKET FORECASTING SYSTEM",
+        "subtitle": "AI-powered price forecasting and investment recommendation dashboard",
+        "settings": "SETTINGS",
+        "close_settings": "CLOSE SETTINGS",
+        "language": "Choose language",
+        "controls": "Prediction Controls",
+        "stock": "Choose stock",
+        "period": "Choose forecast period",
+        "run": "RUN PREDICTION",
+        "report": "OPEN REPORT & DOWNLOAD",
+        "hide_report": "HIDE REPORT",
+        "today": "Today",
+        "tomorrow": "Tomorrow",
+        "week": "Next Week",
+        "month": "Next Month",
+        "workspace": "Run a prediction to see prices, recommendations, graph and downloadable reports.",
+        "current_price": "Current Price",
+        "forecast_price": "Forecast Price",
+        "signal": "Recommendation",
+        "confidence": "Confidence",
+        "current_time": "Current Time",
+        "forecast_time": "Forecast Time",
+        "change": "Expected Change",
+        "reason": "Analysis",
+        "schedule": "Forecast Schedule",
+        "historical": "Historical + Forecast",
+        "open_market": "OPEN DSE MARKET",
+        "report_title": "Prediction Report",
+        "download_help": "Tap a button once. The file will be saved by your phone browser.",
+        "download_pdf": "DOWNLOAD PDF REPORT",
+        "download_csv": "DOWNLOAD CSV DATA",
+        "download_excel": "DOWNLOAD EXCEL REPORT",
+        "download_zip": "DOWNLOAD ALL REPORTS (ZIP)",
+        "pdf_unavailable": "PDF requires reportlab. Install it using: pip install reportlab",
+        "file_missing": "Data file not found",
+        "model_missing": "No prediction model is available.",
+        "run_first": "Please run prediction first.",
+        "generated": "Generated at",
+        "company": "Company",
+        "forecast_period": "Forecast period",
+        "price": "Predicted Price (TZS)",
+        "recommendation": "Recommendation",
+        "number": "No.",
+        "forecast_datetime": "Forecast Time",
+    },
+    "Kiswahili": {
+        "title": "MFUMO WA UTABIRI WA BEI ZA SOKO LA HISA",
+        "subtitle": "Dashibodi ya AI ya kutabiri bei na kutoa mapendekezo ya uwekezaji",
+        "settings": "MIPANGILIO",
+        "close_settings": "FUNGA MIPANGILIO",
+        "language": "Chagua lugha",
+        "controls": "Udhibiti wa Utabiri",
+        "stock": "Chagua hisa",
+        "period": "Chagua kipindi cha utabiri",
+        "run": "FANYA UTABIRI",
+        "report": "FUNGUA RIPOTI NA PAKUA",
+        "hide_report": "FUNGA RIPOTI",
+        "today": "Leo",
+        "tomorrow": "Kesho",
+        "week": "Wiki Ijayo",
+        "month": "Mwezi Ujao",
+        "workspace": "Fanya utabiri kuona bei, mapendekezo, grafu na ripoti zinazopakuliwa.",
+        "current_price": "Bei ya Sasa",
+        "forecast_price": "Bei Iliyotabiriwa",
+        "signal": "Pendekezo",
+        "confidence": "Uhakika",
+        "current_time": "Muda wa Sasa",
+        "forecast_time": "Muda wa Utabiri",
+        "change": "Mabadiliko Yanayotarajiwa",
+        "reason": "Uchambuzi",
+        "schedule": "Ratiba ya Utabiri",
+        "historical": "Historia na Utabiri",
+        "open_market": "FUNGUA SOKO LA DSE",
+        "report_title": "Ripoti ya Utabiri",
+        "download_help": "Bonyeza kitufe mara moja. Faili itahifadhiwa na browser ya simu yako.",
+        "download_pdf": "PAKUA RIPOTI YA PDF",
+        "download_csv": "PAKUA DATA YA CSV",
+        "download_excel": "PAKUA RIPOTI YA EXCEL",
+        "download_zip": "PAKUA RIPOTI ZOTE (ZIP)",
+        "pdf_unavailable": "PDF inahitaji reportlab. Sakinisha kwa: pip install reportlab",
+        "file_missing": "Faili la data halijapatikana",
+        "model_missing": "Hakuna model ya prediction inayopatikana.",
+        "run_first": "Tafadhali fanya utabiri kwanza.",
+        "generated": "Imetengenezwa",
+        "company": "Kampuni",
+        "forecast_period": "Kipindi cha utabiri",
+        "price": "Bei Iliyotabiriwa (TZS)",
+        "recommendation": "Pendekezo",
+        "number": "Na.",
+        "forecast_datetime": "Muda wa Utabiri",
+    },
+}
+
+
+def t(key: str) -> str:
+    return TEXT[st.session_state.language][key]
+
+
+# =====================================================
+# RESPONSIVE CSS
+# =====================================================
+st.markdown(
+    """
 <style>
-
-/* ==========================
-   MAIN PAGE
-========================== */
-
-html, body{
-    background:#f4f7fb;
+:root {
+    --green:#075c35;
+    --green-dark:#043d25;
+    --accent:#9ac64d;
+    --bg:#eef3f8;
+    --surface:#ffffff;
+    --text:#102a43;
+    --muted:#627d98;
+    --border:#d9e2ec;
 }
 
-.block-container{
-    max-width:1200px;
+html, body, [data-testid="stAppViewContainer"] {
+    background:var(--bg);
+    color:var(--text);
+    overflow-x:hidden;
+}
+
+.block-container {
+    max-width:1180px;
+    padding:1rem 1.25rem 3rem;
+}
+
+[data-testid="stSidebar"] {
+    background:#ffffff;
+    border-right:1px solid var(--border);
+}
+
+[data-testid="stSidebar"] > div:first-child {
     padding-top:1rem;
-    padding-bottom:2rem;
-    padding-left:2rem;
-    padding-right:2rem;
 }
 
-/* ==========================
-   TITLES
-========================== */
-
-h1{
-    color:#102a43 !important;
-    font-weight:700 !important;
-}
-
-h2{
-    color:#102a43 !important;
-}
-
-h3{
-    color:#102a43 !important;
-}
-
-h4{
-    color:#102a43 !important;
-}
-
-label{
-    color:#102a43 !important;
-    font-weight:600;
-}
-
-p{
-    color:#334e68 !important;
-}
-
-/* ==========================
-   METRIC CARDS
-========================== */
-
-.metric-container{
-
-    background:#ffffff !important;
-
-    border-radius:20px;
-
-    padding:20px;
-
-    margin-bottom:18px;
-
-    border:1px solid #d9e2ec;
-
-    box-shadow:0 6px 18px rgba(0,0,0,.08);
-
+.hero {
+    background:linear-gradient(135deg,var(--green-dark),var(--green));
+    border-radius:22px;
+    padding:1.35rem;
+    margin-bottom:1rem;
+    box-shadow:0 14px 34px rgba(4,61,37,.18);
     text-align:center;
-
 }
+.hero h1 { color:#fff !important; margin:0; font-size:clamp(1.45rem,4vw,2.35rem); }
+.hero p { color:#e8f5ed !important; margin:.45rem 0 0; }
 
-/* force all text visible */
-
-.metric-container,
-.metric-container *{
-
-    color:#102a43 !important;
-
+.sidebar-title {
+    padding:.85rem;
+    border-radius:16px;
+    background:linear-gradient(135deg,var(--green-dark),var(--green));
+    margin-bottom:.8rem;
+    text-align:center;
 }
+.sidebar-title, .sidebar-title * { color:#fff !important; }
 
-.metric-container h4{
-
-    font-size:18px !important;
-
-    margin-bottom:10px;
-
-    color:#486581 !important;
-
+.card-grid {
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:.8rem;
+    margin:1rem 0;
 }
-
-.metric-container h2{
-
-    font-size:30px !important;
-
-    font-weight:bold;
-
-    color:#0b6623 !important;
-
-    margin-top:8px;
-
-    margin-bottom:10px;
-
-}
-
-.metric-container p{
-
-    font-size:18px !important;
-
-    color:#0b6623 !important;
-
-}
-
-/* ==========================
-   RESULT CARD
-========================== */
-
-.result-section{
-
-    background:linear-gradient(135deg,#014421,#0b6623);
-
-    padding:22px;
-
-    border-radius:20px;
-
-    margin-top:15px;
-
-    margin-bottom:20px;
-
-}
-
-.result-section,
-.result-section *{
-
-    color:white !important;
-
-}
-
-/* ==========================
-   BUTTON
-========================== */
-
-.stButton>button{
-
-    width:100%;
-
-    height:55px;
-
-    border:none;
-
-    border-radius:14px;
-
-    background:#86b64f !important;
-
-    color:#042f1d !important;
-
-    font-size:18px;
-
-    font-weight:bold;
-
-}
-
-.stButton>button:hover{
-
-    background:#9ed35f !important;
-
-}
-
-/* ==========================
-   SELECTBOX
-========================== */
-
-div[data-baseweb="select"]{
-
-    border-radius:14px;
-
-}
-
-/* ==========================
-   STREAMLIT METRICS
-========================== */
-
-div[data-testid="stMetric"]{
-
-    background:white;
-
+.metric-card {
+    min-width:0;
+    min-height:145px;
+    background:var(--surface);
+    border:1px solid var(--border);
     border-radius:18px;
+    padding:1rem;
+    box-shadow:0 7px 20px rgba(16,42,67,.07);
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    overflow:hidden;
+}
+.metric-icon { font-size:1.3rem; }
+.metric-label { color:var(--muted); font-size:.75rem; font-weight:800; text-transform:uppercase; margin-top:.4rem; }
+.metric-value { color:var(--text); font-size:clamp(1.25rem,3vw,1.8rem); font-weight:850; margin-top:.25rem; overflow-wrap:anywhere; }
+.metric-note { color:var(--green); font-size:.83rem; font-weight:750; margin-top:.25rem; overflow-wrap:anywhere; }
 
-    padding:18px;
+.result-card, .panel {
+    border-radius:18px;
+    padding:1rem;
+    margin:.85rem 0;
+    border:1px solid var(--border);
+    background:#fff;
+    box-shadow:0 7px 20px rgba(16,42,67,.06);
+}
+.result-card {
+    background:linear-gradient(135deg,var(--green-dark),var(--green));
+    border:0;
+}
+.result-card, .result-card * { color:#fff !important; }
+.result-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem; }
+.result-item { background:rgba(255,255,255,.11); border:1px solid rgba(255,255,255,.18); border-radius:13px; padding:.75rem; overflow-wrap:anywhere; }
+.result-label { font-size:.72rem; opacity:.8; font-weight:800; text-transform:uppercase; }
+.result-value { font-size:.9rem; font-weight:750; margin-top:.25rem; }
 
-    border:1px solid #d9e2ec;
-
+.reason-box {
+    padding:.9rem 1rem;
+    border-radius:15px;
+    background:#edf7e5;
+    border:1px solid #cfe4bd;
+    color:#244d32;
+    margin:.8rem 0;
 }
 
-div[data-testid="stMetric"] label{
-
-    color:#486581 !important;
-
+.stButton > button, [data-testid="stDownloadButton"] > button {
+    width:100% !important;
+    min-height:50px !important;
+    border-radius:13px !important;
+    font-weight:800 !important;
+    white-space:normal !important;
+    line-height:1.2 !important;
+}
+.stButton > button {
+    background:linear-gradient(135deg,var(--accent),#b7d873) !important;
+    color:var(--green-dark) !important;
+    border:0 !important;
+}
+[data-testid="stDownloadButton"] > button {
+    background:#fff !important;
+    color:var(--green-dark) !important;
+    border:1px solid #b8d6a4 !important;
+}
+[data-testid="stDownloadButton"] > button:hover {
+    background:#edf7e5 !important;
+    border-color:var(--green) !important;
 }
 
-div[data-testid="stMetricValue"]{
-
-    color:#0b6623 !important;
-
+[data-testid="stDataFrame"], [data-testid="stTable"] {
+    width:100% !important;
+    overflow-x:auto !important;
+    border-radius:15px;
+}
+[data-testid="stPlotlyChart"], [data-testid="stPyplotGlobalUse"] {
+    width:100% !important;
+    overflow:hidden;
 }
 
-/* ==========================
-   IMAGE
-========================== */
-
-img{
-
-    display:block;
-
-    margin:auto;
-
+.mobile-table-wrap {
+    width:100%;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
 }
 
-/* ==========================
-   GRAPH
-========================== */
+#MainMenu, footer { visibility:hidden; }
+header { background:transparent !important; }
 
-canvas{
-
-    width:100%!important;
-
+@media (max-width:900px) {
+    .card-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 
-/* ==========================
-   MOBILE
-========================== */
-
-@media (max-width:768px){
-
-.block-container{
-
-    padding-left:12px;
-
-    padding-right:12px;
-
-    padding-top:8px;
-
+@media (max-width:768px) {
+    .block-container {
+        width:100% !important;
+        max-width:100% !important;
+        padding:.6rem .55rem 1.5rem !important;
+    }
+    .hero { border-radius:16px; padding:1rem .7rem; }
+    .hero h1 { font-size:1.35rem !important; line-height:1.25; }
+    .hero p { font-size:.84rem !important; }
+    .card-grid { grid-template-columns:1fr !important; gap:.65rem; }
+    .metric-card { min-height:105px; border-radius:15px; padding:.85rem; }
+    .metric-value { font-size:1.35rem; }
+    .result-grid { grid-template-columns:1fr !important; }
+    .result-card, .panel { border-radius:15px; padding:.8rem; }
+    [data-testid="stHorizontalBlock"] { gap:.55rem !important; }
+    [data-testid="column"] {
+        min-width:100% !important;
+        width:100% !important;
+        flex:1 1 100% !important;
+    }
+    [data-testid="stDownloadButton"] { width:100% !important; }
+    [data-testid="stDownloadButton"] > button { min-height:52px !important; font-size:.9rem !important; }
+    [data-testid="stDataFrame"] { max-width:100vw !important; }
+    .js-plotly-plot, .plot-container, .svg-container { width:100% !important; max-width:100% !important; }
 }
 
-h1{
-
-    font-size:26px !important;
-
-    text-align:center;
-
+@media (max-width:420px) {
+    .block-container { padding-left:.4rem !important; padding-right:.4rem !important; }
+    .metric-card { padding:.75rem; }
+    .metric-label { font-size:.7rem; }
+    .metric-value { font-size:1.25rem; }
 }
-
-h2{
-
-    font-size:22px !important;
-
-}
-
-h3{
-
-    font-size:20px !important;
-
-}
-
-.metric-container{
-
-    padding:16px;
-
-}
-
-.metric-container h2{
-
-    font-size:24px !important;
-
-}
-
-.metric-container h4{
-
-    font-size:16px !important;
-
-}
-
-.result-section{
-
-    padding:16px;
-
-}
-
-}
-
-/* ==========================
-   HIDE DEFAULT
-========================== */
-
-header{
-
-    visibility:hidden;
-
-}
-
-footer{
-
-    visibility:hidden;
-
-}
-
-#MainMenu{
-
-    visibility:hidden;
-
-}
-
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-st.title("📈 STOCK TRADING MARKET PRICE")
-st.caption("Smart AI Prediction System")
 
-# =========================
-# STOCK SELECT
-# =========================
-stock = st.selectbox("SELECT STOCK INVESTORS", ["CRDB","NMB","TTCL","DTB"])
+# =====================================================
+# SIDEBAR / SETTINGS
+# =====================================================
+with st.sidebar:
+    st.markdown(
+        f"<div class='sidebar-title'><strong>⚙️ {t('controls')}</strong></div>",
+        unsafe_allow_html=True,
+    )
 
-app_title = "📈 STOCK TRADING MARKET PRICE"
-if stock == "CRDB":
-    app_title = "📈 CRDB MARKET PREDICTION"
+    settings_label = t("close_settings") if st.session_state.show_settings else t("settings")
+    if st.button(f"⚙️ {settings_label}", use_container_width=True, key="settings_button"):
+        st.session_state.show_settings = not st.session_state.show_settings
+        st.rerun()
 
-st.title(app_title)
-st.caption("Smart AI Prediction System")
+    if st.session_state.show_settings:
+        language = st.radio(
+            t("language"),
+            ["English", "Kiswahili"],
+            index=0 if st.session_state.language == "English" else 1,
+            key="language_radio",
+        )
+        if language != st.session_state.language:
+            st.session_state.language = language
+            st.rerun()
+        st.divider()
 
-logo_path = "crdb_logo.png"
+    stock = st.selectbox(t("stock"), ["CRDB", "NMB", "TTCL", "DTB"], key="stock")
 
-dse_links = {
-    "CRDB":"https://www.dse.co.tz/",
-    "NMB":"https://www.dse.co.tz/",
-    "TTCL":"https://www.dse.co.tz/",
-    "DTB":"https://www.dse.co.tz/"
+    period_labels = {
+        t("today"): "Today",
+        t("tomorrow"): "Tomorrow",
+        t("week"): "Next Week",
+        t("month"): "Next Month",
+    }
+    period_label = st.selectbox(t("period"), list(period_labels.keys()), key="period_label")
+    period = period_labels[period_label]
+
+    run_prediction = st.button(f"🚀 {t('run')}", use_container_width=True, type="primary")
+
+    report_text = t("hide_report") if st.session_state.report_open else t("report")
+    open_report = st.button(f"📥 {report_text}", use_container_width=True)
+
+    if open_report:
+        if st.session_state.prediction is None:
+            st.warning(t("run_first"))
+        else:
+            st.session_state.report_open = not st.session_state.report_open
+            st.rerun()
+
+
+# =====================================================
+# HEADER
+# =====================================================
+st.markdown(
+    f"""
+    <section class="hero">
+        <h1>📈 {t('title')}</h1>
+        <p>{t('subtitle')}</p>
+    </section>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# =====================================================
+# DATA AND MODEL HELPERS
+# =====================================================
+STOCK_NAMES = {
+    "CRDB": "CRDB Bank Plc",
+    "NMB": "NMB Bank Plc",
+    "TTCL": "TTCL Corporation",
+    "DTB": "Diamond Trust Bank",
 }
+DSE_LINK = "https://www.dse.co.tz/"
 
-# =========================
-# LOAD DATA
-# =========================
-df = pd.read_csv(f"{stock}.csv")
-df["Date"] = pd.to_datetime(df["Date"])
-df = df.sort_values("Date")
 
-# =========================
-# FEATURES ENGINE
-# =========================
-def create_features(df):
-    df["Return"] = df["Close"].pct_change()
-    df["MA10"] = df["Close"].rolling(10).mean()
-    df["MA20"] = df["Close"].rolling(20).mean()
-    df["MA50"] = df["Close"].rolling(50).mean()
-    df["Volatility"] = df["Return"].rolling(10).std()
-    df["Momentum"] = df["Close"] - df["Close"].shift(10)
+def create_features(dataframe: pd.DataFrame) -> pd.DataFrame:
+    frame = dataframe.copy()
+    frame["Return"] = frame["Close"].pct_change()
+    frame["MA10"] = frame["Close"].rolling(10).mean()
+    frame["MA20"] = frame["Close"].rolling(20).mean()
+    frame["MA50"] = frame["Close"].rolling(50).mean()
+    frame["Volatility"] = frame["Return"].rolling(10).std()
+    frame["Momentum"] = frame["Close"] - frame["Close"].shift(10)
 
-    delta = df["Close"].diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-
+    delta = frame["Close"].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
     avg_gain = gain.rolling(14).mean()
-    avg_loss = loss.rolling(14).mean()
+    avg_loss = loss.rolling(14).mean().replace(0, np.nan)
     rs = avg_gain / avg_loss
-    df["RSI"] = 100 - (100 / (1 + rs))
+    frame["RSI"] = 100 - (100 / (1 + rs))
 
-    ema12 = df["Close"].ewm(span=12).mean()
-    ema26 = df["Close"].ewm(span=26).mean()
-    df["MACD"] = ema12 - ema26
-    df["Signal"] = df["MACD"].ewm(span=9).mean()
+    ema12 = frame["Close"].ewm(span=12, adjust=False).mean()
+    ema26 = frame["Close"].ewm(span=26, adjust=False).mean()
+    frame["MACD"] = ema12 - ema26
+    frame["Signal"] = frame["MACD"].ewm(span=9, adjust=False).mean()
+    return frame.dropna().reset_index(drop=True)
 
-    return df.dropna()
 
-df = create_features(df)
+@st.cache_resource(show_spinner=False)
+def load_assets():
+    scaler_obj = joblib.load("models/scaler.pkl")
+    onnx_session = None
+    keras_obj = None
 
-features = df[[
-    "Open","High","Low","Close","Volume",
-    "Return","MA10","MA20","MA50",
-    "Volatility","Momentum","RSI","MACD","Signal"
-]]
+    if ort is not None and os.path.exists("models/stock_model.onnx"):
+        try:
+            onnx_session = ort.InferenceSession("models/stock_model.onnx")
+        except Exception:
+            onnx_session = None
 
-scaler = joblib.load("models/scaler.pkl")
-scaled = scaler.transform(features)
+    if onnx_session is None and keras_load_model is not None and os.path.exists("models/stock_model.keras"):
+        try:
+            keras_obj = keras_load_model("models/stock_model.keras", compile=False)
+        except Exception:
+            keras_obj = None
 
-model_path = "models/stock_model.onnx"
-keras_model_path = "models/stock_model.keras"
+    return scaler_obj, onnx_session, keras_obj
 
-session = None
-keras_model = None
 
-if ort is not None:
-    try:
-        session = ort.InferenceSession(model_path)
-    except Exception as e:
-        st.warning(f"Could not load ONNX model: {e}")
+def forecast_days(selected_period: str) -> int:
+    return {"Today": 1, "Tomorrow": 1, "Next Week": 7, "Next Month": 30}[selected_period]
 
-if session is None and keras_load_model is not None:
-    try:
-        keras_model = keras_load_model(keras_model_path, compile=False)
-    except Exception as e:
-        st.warning(f"Could not load Keras model: {e}")
 
-if session is None and keras_model is None:
-    st.error("No model available. Install onnxruntime or add models/stock_model.keras.")
+def next_business_day(day):
+    while day.weekday() >= 5:
+        day += timedelta(days=1)
+    return day
 
-# =========================
-# TIME OPTIONS
-# =========================
-period = st.selectbox("SELECT FORECAST PERIOD", ["Today","Tomorrow","Next Week","Next Month"])
 
-def forecast_days(x):
-    return {"Today":1,"Tomorrow":1,"Next Week":7,"Next Month":30}[x]
+def create_forecast_times(selected_period: str, count: int, now: datetime, rng) -> list[datetime]:
+    if selected_period == "Today":
+        # Exactly 2.5 to 3 hours ahead.
+        return [now + timedelta(minutes=int(rng.integers(150, 181)))]
 
-# =========================
-# FIXED PREDICTION ENGINE
-# =========================
-# =========================
-# SMART PREDICTION ENGINE
-# =========================
-def predict_future(days, data):
-    seq = data[-60:].copy()
-    close_id = features.columns.get_loc("Close")
+    if selected_period == "Tomorrow":
+        day = next_business_day(now.date() + timedelta(days=1))
+        hour = int(rng.integers(10, 15))
+        minute = int(rng.integers(0, 60))
+        return [datetime.combine(day, datetime.min.time()).replace(hour=hour, minute=minute)]
 
-    predictions = []
+    results = []
+    day = now.date() + timedelta(days=1)
+    while len(results) < count:
+        day = next_business_day(day)
+        hour = int(rng.integers(10, 15))
+        minute = int(rng.integers(0, 60))
+        results.append(datetime.combine(day, datetime.min.time()).replace(hour=hour, minute=minute))
+        day += timedelta(days=1)
+    return results
 
-    for i in range(days):
 
-        x = seq.reshape(1, 60, data.shape[1])
+def inverse_close_values(values, scaler_obj, close_index: int, feature_count: int) -> list[float]:
+    result = []
+    for value in values:
+        row = np.zeros((1, feature_count))
+        row[0, close_index] = value
+        result.append(float(scaler_obj.inverse_transform(row)[0][close_index]))
+    return result
 
-       # pred = model.predict(x, verbose=0)[0][0]
-        last_close = seq[-1][close_id]
 
-        if session is not None:
-            input_name = session.get_inputs()[0].name
-            prediction = session.run(
-                None,
-                {
-                    input_name: x.astype(np.float32)
-                }
-            )[0]
-            pred = float(prediction[0][0])
-        elif keras_model is not None:
-            pred = float(keras_model.predict(x, verbose=0)[0][0])
+def predict_scaled_path(days, scaled_data, feature_names, prepared_df, onnx_session, keras_obj, rng):
+    if len(scaled_data) < 60:
+        raise ValueError("At least 60 prepared rows are required.")
+
+    sequence = scaled_data[-60:].copy()
+    close_index = feature_names.index("Close")
+    results = []
+
+    recent_return = float(prepared_df["Return"].tail(5).mean())
+    trend = float((prepared_df["MA10"].iloc[-1] - prepared_df["MA20"].iloc[-1]) / prepared_df["Close"].iloc[-1])
+
+    for step in range(days):
+        x = sequence.reshape(1, 60, scaled_data.shape[1]).astype(np.float32)
+
+        if onnx_session is not None:
+            input_name = onnx_session.get_inputs()[0].name
+            raw = float(np.asarray(onnx_session.run(None, {input_name: x})[0]).reshape(-1)[0])
+        elif keras_obj is not None:
+            raw = float(np.asarray(keras_obj.predict(x, verbose=0)).reshape(-1)[0])
         else:
-            raise RuntimeError("No prediction model available.")
+            raise RuntimeError(t("model_missing"))
 
-        ai_change = pred * 0.0015
+        ai_component = float(np.tanh(raw)) * 0.004
+        technical_component = float(np.clip(recent_return * 0.25 + trend * 0.45, -0.004, 0.004))
+        wave = np.sin((step + 1) * 1.2) * 0.0014
+        noise = float(rng.normal(0, 0.0015 if days > 1 else 0.0010))
+        change = float(np.clip(ai_component + technical_component + wave + noise, -0.012, 0.012))
 
+        next_close = float(sequence[-1, close_index] * (1 + change))
+        results.append(next_close)
+        new_row = sequence[-1].copy()
+        new_row[close_index] = next_close
+        sequence = np.vstack([sequence[1:], new_row])
 
-        # Small random market movement
-        market_noise = np.random.normal(0, 0.0008)
-
-        # Drift depends on period
-        if days == 1:
-            drift = np.random.uniform(-0.002, 0.002)
-
-        elif days == 7:
-            drift = np.random.uniform(-0.008, 0.010)
-
-        else:
-            drift = np.random.uniform(-0.015, 0.020)
-
-        total_change = ai_change + market_noise + drift
-
-        # Limit unrealistic movement
-        total_change = np.clip(total_change, -0.03, 0.03)
-
-        next_close = last_close * (1 + total_change)
-
-        predictions.append(next_close)
-
-        new_row = seq[-1].copy()
-        new_row[close_id] = next_close
-
-        seq = np.vstack([seq[1:], new_row])
-
-    return np.array(predictions)
-
-# =========================
-# RUN
-# =========================
-if st.button("🚀 RUN PREDICTION"):
-
-    days = forecast_days(period)
-    predictions = predict_future(days, scaled)
-
-    close_id = features.columns.get_loc("Close")
-
-    # CURRENT PRICE
-    real_price = df.Close.iloc[-1]
-
-# Current price stays very close to market
-    current_price = real_price * np.random.uniform(0.999, 1.001)
+    return np.asarray(results)
 
 
-    # FUTURE PRICE
-    temp = np.zeros((1, scaled.shape[1]))
-    temp[0, close_id] = predictions[-1]
-    future_price = scaler.inverse_transform(temp)[0][close_id]
+def recommendation(price, reference, previous, prepared_df, index, rng):
+    change_pct = (price - reference) / reference * 100
+    step_pct = 0 if previous is None else (price - previous) / previous * 100
+    rsi = float(prepared_df["RSI"].iloc[-1])
+    macd = float(prepared_df["MACD"].iloc[-1])
+    macd_signal = float(prepared_df["Signal"].iloc[-1])
+    ma10 = float(prepared_df["MA10"].iloc[-1])
+    ma20 = float(prepared_df["MA20"].iloc[-1])
+    volatility = float(prepared_df["Volatility"].iloc[-1])
 
-    # Maximum movement allowed
-    if period == "Today":
-      max_move = 0.010
-    elif period == "Tomorrow":
-      max_move = 0.015
-    elif period == "Next Week":
-      max_move = 0.030
+    bullish = 0.0
+    bearish = 0.0
+    reasons = []
+    threshold = 0.18 + min(index, 10) * 0.015
+
+    if change_pct > threshold:
+        bullish += 2.8
+        reasons.append(f"price rises {change_pct:.2f}%")
+    elif change_pct < -threshold:
+        bearish += 2.8
+        reasons.append(f"price falls {abs(change_pct):.2f}%")
     else:
-      max_move = 0.050
+        reasons.append(f"movement {change_pct:+.2f}% is near neutral")
 
-    lower = real_price * (1 - max_move)
-    upper = real_price * (1 + max_move)
-    future_price = np.clip(future_price, lower, upper)
-    
-    # =========================
-     # =========================
-# SMART SIGNAL ENGINE
-# =========================
+    if ma10 > ma20:
+        bullish += 0.9
+        reasons.append("moving-average trend is positive")
+    elif ma10 < ma20:
+        bearish += 0.9
+        reasons.append("moving-average trend is negative")
 
-    # =========================
-# SMART SIGNAL ENGINE
-# =========================
+    if macd > macd_signal:
+        bullish += 0.8
+        reasons.append("MACD is bullish")
+    elif macd < macd_signal:
+        bearish += 0.8
+        reasons.append("MACD is bearish")
 
-# =========================
-# SMART SIGNAL ENGINE
-# =========================
+    if rsi < 35:
+        bullish += 0.7
+        reasons.append("RSI suggests oversold conditions")
+    elif rsi > 70:
+        bearish += 0.7
+        reasons.append("RSI suggests overbought conditions")
 
-# Percentage price change
-   # =========================
-    # SMART SIGNAL ENGINE (UPDATED)
-    # =========================
-    # =========================
-    # SMART SIGNAL ENGINE (FULL UPDATED)
-    # =========================
+    if step_pct > threshold * 0.45:
+        bullish += 0.8
+    elif step_pct < -threshold * 0.45:
+        bearish += 0.8
 
-    # Price difference
-    diff = future_price - current_price
-    diff_pct = (diff / current_price) * 100
+    pulse = float(rng.normal(0, 0.55))
+    if pulse > 0.35:
+        bullish += 0.55
+    elif pulse < -0.35:
+        bearish += 0.55
 
-    # Noise threshold (market micro-movement)
-    threshold = 0.1  # 0.1%
-
-    # =========================
-    # SIGNAL LOGIC (UNIFIED RULE)
-    # =========================
-
-    if abs(diff_pct) <= threshold:
-        signal = "HOLD 🟡"
-        reason = "Market movement is too small (noise zone ±0.1%)."
-
-    elif future_price > current_price:
+    gap = bullish - bearish
+    if bullish >= 2.6 and gap >= 0.65:
         signal = "BUY 🟢"
-        reason = "Forecast price is higher than current price."
-
-    else:
+    elif bearish >= 2.6 and gap <= -0.65:
         signal = "SELL 🔴"
-        reason = "Forecast price is lower than current price."
-
-    change = diff_pct
-
-    # =========================
-    # OPTIONAL: CONFIDENCE SCORE
-    # =========================
-    confidence = 70
-
-    volatility = df["Volatility"].iloc[-1]
-
-    if signal == "BUY 🟢":
-        if volatility < 0.02:
-            confidence += 10
-
-    elif signal == "SELL 🔴":
-        if volatility > 0.02:
-            confidence += 10
-
     else:
-        confidence += 5
+        signal = "HOLD 🟡"
 
-    confidence = min(confidence, 95)
+    confidence = int(np.clip(56 + abs(gap) * 7 + min(abs(change_pct), 2.5) * 5, 52, 95))
+    if volatility > 0.03:
+        confidence = max(50, confidence - 5)
 
-    # =========================
-    # TREND BOOST (NEXT WEEK / MONTH)
-    # =========================
-    if period in ["Next Week","Next Month"]:
-        drift = np.linspace(
-            0,
-            np.random.uniform(-0.02, 0.03),
-            len(predictions)
-        )
-        predictions = predictions * (1 + drift)
+    return signal, change_pct, confidence, "; ".join(reasons)
 
-    # =========================
-    # FORECAST TIME
-    # =========================
-    now = datetime.now()
-    base_date = now.date()
-    forecast_offset = timedelta(minutes=35)
-    incremental_offset = timedelta(minutes=15)
 
-    if period == "Today":
-        forecast_times = [now + forecast_offset]
-    elif period == "Tomorrow":
-        forecast_times = [
-            datetime.combine(base_date + timedelta(days=1), now.time()) + forecast_offset
-        ]
-    elif period == "Next Week":
-        forecast_times = [
-            datetime.combine(base_date + timedelta(days=i + 1), now.time()) + forecast_offset + incremental_offset * i
-            for i in range(7)
-        ]
-    else:
-        forecast_times = [
-            datetime.combine(base_date + timedelta(days=i + 1), now.time()) + forecast_offset + incremental_offset * i
-            for i in range(30)
-        ]
+# =====================================================
+# REPORT BUILDERS
+# =====================================================
+def build_csv(summary_df: pd.DataFrame, schedule_df: pd.DataFrame) -> bytes:
+    text = "PREDICTION SUMMARY\n"
+    text += summary_df.to_csv(index=False)
+    text += "\nFORECAST SCHEDULE\n"
+    text += schedule_df.to_csv(index=False)
+    return text.encode("utf-8-sig")
 
-    forecast_time = forecast_times[-1]
-    if len(forecast_times) == 1:
-        forecast_range_text = forecast_times[0].strftime('%d %B %Y %H:%M')
-    else:
-        forecast_range_text = (
-            f"{forecast_times[0].strftime('%d %B %Y %H:%M')} to "
-            f"{forecast_times[-1].strftime('%d %B %Y %H:%M')}"
-        )
 
-    # =========================
-    # UI
-    # =========================
-    if stock == "CRDB":
-        st.markdown(
-            "<div class='result-section' style='display:flex; align-items:center; gap:20px;'>"
-            "<div><h3 style='margin:0;'>CRDB Investor Forecast</h3>"
-            "<p style='margin:4px 0 0; color:#d4e9c7;'>Trusted CRDB prediction insights</p></div></div>",
-            unsafe_allow_html=True
-        )
-        st.image(logo_path, width=120)
+def build_excel(summary_df: pd.DataFrame, schedule_df: pd.DataFrame) -> bytes:
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        summary_df.to_excel(writer, sheet_name="Summary", index=False)
+        schedule_df.to_excel(writer, sheet_name="Forecast", index=False)
+        for sheet_name in ["Summary", "Forecast"]:
+            sheet = writer.sheets[sheet_name]
+            for column_cells in sheet.columns:
+                width = max(len(str(cell.value or "")) for cell in column_cells) + 2
+                sheet.column_dimensions[column_cells[0].column_letter].width = min(width, 45)
+    buffer.seek(0)
+    return buffer.getvalue()
 
-    c1, c2, c3 = st.columns(3)
 
-    with c1:
-        st.markdown("<div class='metric-container'>💰<strong> Current Price</strong><br>" + f"{current_price:.2f} TZS</div>", unsafe_allow_html=True)
-    with c2:
-        st.markdown("<div class='metric-container'>🔮<strong> Forecast Price</strong><br>" + f"{future_price:.2f} TZS<br><span style='color:#0b6623;'>{change:.2f}%</span></div>", unsafe_allow_html=True)
-    with c3:
-        st.markdown("<div class='metric-container'>📊<strong> Signal</strong><br>" + f"{signal}</div>", unsafe_allow_html=True)
+def build_pdf(summary_df: pd.DataFrame, schedule_df: pd.DataFrame, title: str) -> bytes | None:
+    if not REPORTLAB_AVAILABLE:
+        return None
 
-    st.markdown("<div class='result-section'>" +
-                f"<p>🕒 CURRENT TIME: {now.strftime('%d %B %Y %H:%M')}</p>" +
-                f"<p>📅 FORECAST TIME: {forecast_time.strftime('%d %B %Y %H:%M')}</p>" +
-                f"<p>📈 CHANGE: {change:.2f}%</p>" +
-                "</div>", unsafe_allow_html=True)
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=24, leftMargin=24, topMargin=24, bottomMargin=24)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("TitleCentered", parent=styles["Title"], alignment=TA_CENTER, textColor=colors.HexColor("#075c35"), fontSize=17)
+    body_style = ParagraphStyle("BodySmall", parent=styles["BodyText"], fontSize=8.5, leading=11)
 
-    future_prices = []
-    for p in predictions:
-        temp = np.zeros((1, scaled.shape[1]))
-        temp[0, close_id] = p
-        future_prices.append(scaler.inverse_transform(temp)[0][close_id])
+    story = [Paragraph(title, title_style), Spacer(1, 10)]
 
-    recommendations = []
-    for price in future_prices:
-        diff_pct = (price - current_price) / current_price * 100
-        if abs(diff_pct) <= 0.1:
-            recommendations.append("HOLD: wait for clearer movement")
-        elif diff_pct > 0:
-            recommendations.append("BUY: price is trending higher")
-        else:
-            recommendations.append("SELL: price is trending lower")
+    summary_data = [["Metric", "Value"]] + [[str(r["Metric"]), str(r["Value"])] for _, r in summary_df.iterrows()]
+    summary_table = Table(summary_data, colWidths=[150, 380], repeatRows=1)
+    summary_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#075c35")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), .4, colors.HexColor("#d9e2ec")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f5f8fb")]),
+    ]))
+    story.extend([summary_table, Spacer(1, 14), Paragraph(t("schedule"), styles["Heading2"]), Spacer(1, 5)])
 
-    schedule_df = pd.DataFrame({
-        "Prediction #": list(range(1, len(forecast_times) + 1)),
-        "Forecast Time": [t.strftime('%d %b %Y %H:%M') for t in forecast_times[:len(predictions)]],
-        "Predicted Price": [f"{p:.2f}" for p in future_prices],
-        "Recommendation": recommendations
-    })
-    st.markdown("<div class='table-panel'><h3 style='margin-top:0;'>📅 Forecast Schedule</h3></div>", unsafe_allow_html=True)
-    st.table(schedule_df)
+    headers = list(schedule_df.columns)
+    rows = [headers]
+    for _, row in schedule_df.iterrows():
+        rows.append([Paragraph(str(row[column]), body_style) for column in headers])
 
-    st.markdown(f"[🔗 OPEN MARKET]({dse_links.get(stock)})")
+    widths = [35, 115, 95, 115, 170] if len(headers) == 5 else None
+    forecast_table = Table(rows, colWidths=widths, repeatRows=1)
+    forecast_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#075c35")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#d9e2ec")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f5f8fb")]),
+    ]))
+    story.append(forecast_table)
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
 
-    # =========================
-    # GRAPH
-    # =========================
-    st.subheader("📊 HISTORICAL + FORECAST")
 
-    fig, ax = plt.subplots(figsize=(12,5))
+def build_zip(files: dict[str, bytes]) -> bytes:
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for filename, content in files.items():
+            archive.writestr(filename, content)
+    buffer.seek(0)
+    return buffer.getvalue()
 
-    ax.plot(df.tail(100).Date, df.tail(100).Close, label="CURRENT")
 
-    future_dates = forecast_times[:len(predictions)]
+# =====================================================
+# RUN PREDICTION
+# =====================================================
+if run_prediction:
+    try:
+        csv_path = f"{stock}.csv"
+        if not os.path.exists(csv_path):
+            raise FileNotFoundError(f"{t('file_missing')}: {csv_path}")
 
-    ax.plot(future_dates, future_prices, marker="o", label="FORECAST")
+        raw_df = pd.read_csv(csv_path)
+        required = {"Date", "Open", "High", "Low", "Close", "Volume"}
+        missing = required.difference(raw_df.columns)
+        if missing:
+            raise ValueError("Missing columns: " + ", ".join(sorted(missing)))
 
-    ax.set_title(f"{stock} Prediction")
+        raw_df["Date"] = pd.to_datetime(raw_df["Date"], errors="coerce")
+        raw_df = raw_df.dropna(subset=["Date"]).sort_values("Date")
+        prepared_df = create_features(raw_df)
+
+        feature_names = ["Open", "High", "Low", "Close", "Volume", "Return", "MA10", "MA20", "MA50", "Volatility", "Momentum", "RSI", "MACD", "Signal"]
+        feature_df = prepared_df[feature_names]
+        scaler, onnx_session, keras_obj = load_assets()
+        if onnx_session is None and keras_obj is None:
+            raise RuntimeError(t("model_missing"))
+
+        scaled = scaler.transform(feature_df)
+        now = datetime.now()
+        seed = int.from_bytes(os.urandom(8), "little")
+        rng = np.random.default_rng(seed)
+
+        days = forecast_days(period)
+        scaled_predictions = predict_scaled_path(days, scaled, feature_names, prepared_df, onnx_session, keras_obj, rng)
+        close_index = feature_names.index("Close")
+        future_prices = inverse_close_values(scaled_predictions, scaler, close_index, len(feature_names))
+
+        real_price = float(prepared_df["Close"].iloc[-1])
+        six_hour_bucket = int(now.timestamp() // (6 * 60 * 60))
+        quote_rng = np.random.default_rng(seed ^ six_hour_bucket)
+        current_price = float(real_price * (1 + np.sin((now.hour * 60 + now.minute) / 60) * .0008 + quote_rng.normal(0, .0007)))
+
+        max_move = {"Today": .012, "Tomorrow": .018, "Next Week": .04, "Next Month": .075}[period]
+        count = max(len(future_prices), 1)
+        for i, price in enumerate(future_prices):
+            progress = (i + 1) / count
+            limit = max(.004, max_move * progress)
+            future_prices[i] = float(np.clip(price, current_price * (1 - limit), current_price * (1 + limit)))
+
+        times = create_forecast_times(period, len(future_prices), now, rng)
+        rows = []
+        previous = None
+        final_reason = ""
+        for i, (price, forecast_dt) in enumerate(zip(future_prices, times)):
+            row_rng = np.random.default_rng(seed + (i + 1) * 7919)
+            row_signal, row_change, row_confidence, row_reason = recommendation(price, current_price, previous, prepared_df, i, row_rng)
+            rows.append({
+                t("number"): i + 1,
+                t("forecast_datetime"): forecast_dt.strftime("%d %b %Y %H:%M"),
+                t("price"): round(price, 2),
+                t("recommendation"): row_signal,
+                t("confidence"): f"{row_confidence}%",
+            })
+            previous = price
+            final_reason = row_reason
+
+        schedule_df = pd.DataFrame(rows)
+        final_price = float(future_prices[-1])
+        final_signal = str(rows[-1][t("recommendation")])
+        final_confidence = int(str(rows[-1][t("confidence")]).replace("%", ""))
+        final_change = (final_price - current_price) / current_price * 100
+        forecast_time = times[-1]
+
+        summary_df = pd.DataFrame({
+            "Metric": [
+                t("company"), t("stock"), t("forecast_period"), t("current_price"),
+                t("forecast_price"), t("change"), t("recommendation"), t("confidence"),
+                t("generated"), t("forecast_time"), t("reason"),
+            ],
+            "Value": [
+                STOCK_NAMES[stock], stock, period_label, f"{current_price:,.2f} TZS",
+                f"{final_price:,.2f} TZS", f"{final_change:+.2f}%", final_signal,
+                f"{final_confidence}%", now.strftime("%d %B %Y %H:%M:%S"),
+                forecast_time.strftime("%d %B %Y %H:%M"), final_reason,
+            ],
+        })
+
+        stamp = now.strftime("%Y%m%d_%H%M%S")
+        base_name = f"{stock}_{period.replace(' ', '_')}_{stamp}"
+        csv_bytes = build_csv(summary_df, schedule_df)
+        excel_bytes = build_excel(summary_df, schedule_df)
+        pdf_bytes = build_pdf(summary_df, schedule_df, f"{STOCK_NAMES[stock]} - {t('report_title')}")
+
+        package = {
+            f"{base_name}.csv": csv_bytes,
+            f"{base_name}.xlsx": excel_bytes,
+        }
+        if pdf_bytes is not None:
+            package[f"{base_name}.pdf"] = pdf_bytes
+        zip_bytes = build_zip(package)
+
+        st.session_state.prediction = {
+            "stock": stock,
+            "period": period,
+            "period_label": period_label,
+            "raw_df": raw_df,
+            "current_price": current_price,
+            "future_prices": future_prices,
+            "times": times,
+            "final_price": final_price,
+            "final_signal": final_signal,
+            "final_confidence": final_confidence,
+            "final_change": final_change,
+            "reason": final_reason,
+            "now": now,
+            "forecast_time": forecast_time,
+            "schedule_df": schedule_df,
+            "summary_df": summary_df,
+            "base_name": base_name,
+            "csv_bytes": csv_bytes,
+            "excel_bytes": excel_bytes,
+            "pdf_bytes": pdf_bytes,
+            "zip_bytes": zip_bytes,
+        }
+        st.session_state.report_open = False
+    except Exception as error:
+        st.error(f"Prediction error: {error}")
+
+
+# =====================================================
+# DISPLAY RESULTS
+# =====================================================
+prediction = st.session_state.prediction
+
+if prediction is None:
+    st.markdown(f"<div class='panel' style='text-align:center'><strong>{t('workspace')}</strong></div>", unsafe_allow_html=True)
+else:
+    p = prediction
+    st.markdown(
+        f"""
+        <div class="card-grid">
+            <div class="metric-card">
+                <div class="metric-icon">💰</div>
+                <div class="metric-label">{t('current_price')}</div>
+                <div class="metric-value">{p['current_price']:,.2f} TZS</div>
+                <div class="metric-note">{p['stock']}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">🔮</div>
+                <div class="metric-label">{t('forecast_price')}</div>
+                <div class="metric-value">{p['final_price']:,.2f} TZS</div>
+                <div class="metric-note">{p['final_change']:+.2f}%</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">📊</div>
+                <div class="metric-label">{t('signal')}</div>
+                <div class="metric-value">{p['final_signal']}</div>
+                <div class="metric-note">{t('confidence')}: {p['final_confidence']}%</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">🕒</div>
+                <div class="metric-label">{t('forecast_time')}</div>
+                <div class="metric-value" style="font-size:1.05rem">{p['forecast_time'].strftime('%d %b %Y')}</div>
+                <div class="metric-note">{p['forecast_time'].strftime('%H:%M')}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"""
+        <div class="result-card">
+            <div class="result-grid">
+                <div class="result-item"><div class="result-label">{t('current_time')}</div><div class="result-value">{p['now'].strftime('%d %B %Y %H:%M:%S')}</div></div>
+                <div class="result-item"><div class="result-label">{t('forecast_time')}</div><div class="result-value">{p['forecast_time'].strftime('%d %B %Y %H:%M')}</div></div>
+                <div class="result-item"><div class="result-label">{t('change')}</div><div class="result-value">{p['final_change']:+.2f}%</div></div>
+            </div>
+        </div>
+        <div class="reason-box"><strong>{t('reason')}:</strong> {p['reason']}</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.subheader(f"📅 {t('schedule')}")
+    st.dataframe(p["schedule_df"], use_container_width=True, hide_index=True)
+
+    st.link_button(f"🔗 {t('open_market')}", DSE_LINK, use_container_width=True)
+
+    st.subheader(f"📊 {t('historical')}")
+    fig, ax = plt.subplots(figsize=(10, 4.8))
+    historical = p["raw_df"].tail(100)
+    ax.plot(historical["Date"], historical["Close"], label="Historical")
+    ax.plot(p["times"], p["future_prices"], marker="o", label="Forecast")
+    ax.set_title(f"{p['stock']} Prediction")
     ax.set_xlabel("Time")
-    ax.set_ylabel("Price")
+    ax.set_ylabel("Price (TZS)")
     ax.legend()
-    ax.grid()
+    ax.grid(alpha=.25)
+    fig.tight_layout()
+    st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
 
-    st.pyplot(fig)
+    if st.session_state.report_open:
+        st.markdown(f"<div class='panel'><h3 style='margin-top:0'>📥 {t('report_title')}</h3><p>{t('download_help')}</p></div>", unsafe_allow_html=True)
+        st.dataframe(p["summary_df"], use_container_width=True, hide_index=True)
+
+        # Keep each download button independent and use exact MIME types for mobile browsers.
+        if p["pdf_bytes"] is not None:
+            st.download_button(
+                label=f"📄 {t('download_pdf')}",
+                data=p["pdf_bytes"],
+                file_name=f"{p['base_name']}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key=f"pdf_{p['base_name']}",
+                on_click="ignore",
+            )
+        else:
+            st.info(t("pdf_unavailable"))
+
+        st.download_button(
+            label=f"📑 {t('download_csv')}",
+            data=p["csv_bytes"],
+            file_name=f"{p['base_name']}.csv",
+            mime="text/csv; charset=utf-8",
+            use_container_width=True,
+            key=f"csv_{p['base_name']}",
+            on_click="ignore",
+        )
+
+        st.download_button(
+            label=f"📊 {t('download_excel')}",
+            data=p["excel_bytes"],
+            file_name=f"{p['base_name']}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key=f"xlsx_{p['base_name']}",
+            on_click="ignore",
+        )
+
+        st.download_button(
+            label=f"🗂️ {t('download_zip')}",
+            data=p["zip_bytes"],
+            file_name=f"{p['base_name']}_reports.zip",
+            mime="application/zip",
+            use_container_width=True,
+            key=f"zip_{p['base_name']}",
+            on_click="ignore",
+        )
