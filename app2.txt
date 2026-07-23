@@ -1,5 +1,8 @@
 import os
 import zipfile
+import json
+import requests
+from zoneinfo import ZoneInfo
 from io import BytesIO
 from datetime import datetime, timedelta
 
@@ -8,6 +11,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+import firebase_admin
+from firebase_admin import auth, credentials, firestore
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
@@ -54,11 +60,225 @@ DEFAULTS = {
     "show_settings": False,
     "prediction": None,
     "report_open": False,
+    "authenticated": False,
+    "user_id": None,
+    "user_name": None,
+    "user_email": None,
+    "user_role": None,
+    "auth_mode": "Login",
 }
 for key, value in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
+
+# =====================================================
+# TIMEZONE + FIREBASE AUTHENTICATION / FIRESTORE
+# =====================================================
+EAT = ZoneInfo("Africa/Dar_es_Salaam")
+
+
+def eat_now() -> datetime:
+    """Return timezone-aware East Africa Time on every device/session."""
+    return datetime.now(EAT)
+
+
+def _firebase_service_account() -> dict:
+    """Load Firebase service-account JSON without committing the key to GitHub."""
+    if "firebase_service_account" in st.secrets:
+        return dict(st.secrets["firebase_service_account"])
+
+    json_text = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+    if json_text:
+        return json.loads(json_text)
+
+    json_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if json_path and os.path.exists(json_path):
+        with open(json_path, "r", encoding="utf-8") as file:
+            return json.load(file)
+
+    raise RuntimeError(
+        "Firebase service account is missing. Add [firebase_service_account] "
+        "to .streamlit/secrets.toml or set FIREBASE_SERVICE_ACCOUNT_JSON."
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def firebase_services():
+    service_account = _firebase_service_account()
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(credentials.Certificate(service_account))
+    return firestore.client(), auth
+
+
+def firebase_web_api_key() -> str:
+    if "FIREBASE_WEB_API_KEY" in st.secrets:
+        return str(st.secrets["FIREBASE_WEB_API_KEY"])
+    key = os.getenv("FIREBASE_WEB_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("FIREBASE_WEB_API_KEY is missing.")
+    return key
+
+
+def _auth_rest(endpoint: str, payload: dict) -> dict:
+    url = f"https://identitytoolkit.googleapis.com/v1/accounts:{endpoint}?key={firebase_web_api_key()}"
+    response = requests.post(url, json=payload, timeout=20)
+    data = response.json()
+    if not response.ok:
+        code = data.get("error", {}).get("message", "FIREBASE_AUTH_ERROR")
+        friendly = {
+            "EMAIL_EXISTS": "This email is already registered.",
+            "EMAIL_NOT_FOUND": "Invalid email or password.",
+            "INVALID_PASSWORD": "Invalid email or password.",
+            "INVALID_LOGIN_CREDENTIALS": "Invalid email or password.",
+            "WEAK_PASSWORD : Password should be at least 6 characters": "Password must contain at least 6 characters.",
+            "USER_DISABLED": "This account has been disabled.",
+        }
+        raise ValueError(friendly.get(code, code.replace("_", " ").title()))
+    return data
+
+
+def create_user(full_name: str, email: str, password: str, role: str = "user"):
+    full_name = full_name.strip()
+    email = email.strip().lower()
+    if len(full_name) < 2:
+        raise ValueError("Enter a valid full name.")
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise ValueError("Enter a valid email address.")
+    if len(password) < 6:
+        raise ValueError("Password must contain at least 6 characters.")
+
+    result = _auth_rest("signUp", {
+        "email": email,
+        "password": password,
+        "returnSecureToken": True,
+    })
+    uid = result["localId"]
+    db, _ = firebase_services()
+    db.collection("users").document(uid).set({
+        "uid": uid,
+        "fullName": full_name,
+        "username": full_name,
+        "email": email,
+        "role": role,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+        "createdAtEAT": eat_now().isoformat(),
+        "lastLoginAt": None,
+    }, merge=True)
+    return uid
+
+
+def authenticate_user(email: str, password: str):
+    result = _auth_rest("signInWithPassword", {
+        "email": email.strip().lower(),
+        "password": password,
+        "returnSecureToken": True,
+    })
+    token = result["idToken"]
+    db, firebase_auth = firebase_services()
+    decoded = firebase_auth.verify_id_token(token)
+    uid = decoded["uid"]
+    ref = db.collection("users").document(uid)
+    snapshot = ref.get()
+    profile = snapshot.to_dict() if snapshot.exists else {}
+    full_name = profile.get("fullName") or profile.get("username") or result.get("displayName") or email.split("@")[0]
+    role = profile.get("role", "user")
+    ref.set({
+        "uid": uid,
+        "fullName": full_name,
+        "username": full_name,
+        "email": result.get("email", email).lower(),
+        "role": role,
+        "lastLoginAt": firestore.SERVER_TIMESTAMP,
+        "lastLoginAtEAT": eat_now().isoformat(),
+    }, merge=True)
+    return {
+        "id": uid,
+        "full_name": full_name,
+        "email": result.get("email", email).lower(),
+        "role": role,
+        "id_token": token,
+    }
+
+
+def save_prediction_record(record: dict):
+    db, _ = firebase_services()
+    signal_text = str(record["final_signal"])
+    signal = "BUY" if "BUY" in signal_text else "SELL" if "SELL" in signal_text else "HOLD"
+    payload = {
+        "userId": st.session_state.user_id,
+        "uid": st.session_state.user_id,
+        "userName": st.session_state.user_name,
+        "username": st.session_state.user_name,
+        "userEmail": st.session_state.user_email,
+        "email": st.session_state.user_email,
+        "stock": record["stock"],
+        "forecastPeriod": record["period"],
+        "period": record["period"],
+        "currentPrice": float(record["current_price"]),
+        "forecastPrice": float(record["final_price"]),
+        "changePercent": float(record["final_change"]),
+        "recommendation": signal,
+        "signal": signal,
+        "signalDisplay": signal_text,
+        "confidence": int(record["final_confidence"]),
+        "predictionTime": firestore.SERVER_TIMESTAMP,
+        "predictionTimeEAT": record["now"].astimezone(EAT).isoformat(),
+        "forecastTime": record["forecast_time"].astimezone(EAT).isoformat(),
+        "timezone": "Africa/Dar_es_Salaam",
+    }
+    doc = db.collection("predictions").document()
+    payload["predictionId"] = doc.id
+    doc.set(payload)
+
+
+def _format_firestore_time(value):
+    if value is None:
+        return ""
+    if hasattr(value, "astimezone"):
+        return value.astimezone(EAT).strftime("%d %b %Y %H:%M:%S EAT")
+    return str(value)
+
+
+def load_admin_data():
+    db, _ = firebase_services()
+    users_rows = []
+    for doc in db.collection("users").stream():
+        item = doc.to_dict() or {}
+        users_rows.append({
+            "UID": doc.id,
+            "Name": item.get("fullName") or item.get("username", ""),
+            "Email": item.get("email", ""),
+            "Role": item.get("role", "user"),
+            "Registered": _format_firestore_time(item.get("createdAt")) or item.get("createdAtEAT", ""),
+            "Last Login": _format_firestore_time(item.get("lastLoginAt")) or item.get("lastLoginAtEAT", ""),
+        })
+
+    prediction_rows = []
+    for doc in db.collection("predictions").stream():
+        item = doc.to_dict() or {}
+        recommendation = item.get("recommendation") or item.get("signal", "HOLD")
+        prediction_rows.append({
+            "Prediction ID": doc.id,
+            "User": item.get("userName") or item.get("username", ""),
+            "Email": item.get("userEmail") or item.get("email", ""),
+            "Stock": item.get("stock", ""),
+            "Period": item.get("forecastPeriod") or item.get("period", ""),
+            "Current Price": item.get("currentPrice", 0),
+            "Forecast Price": item.get("forecastPrice", 0),
+            "Change %": item.get("changePercent", 0),
+            "Recommendation": recommendation,
+            "Confidence": item.get("confidence", 0),
+            "Prediction Time": _format_firestore_time(item.get("predictionTime")) or item.get("predictionTimeEAT", ""),
+            "Forecast Time": item.get("forecastTime", ""),
+            "_sort_time": item.get("predictionTime") or item.get("predictionTimeEAT", ""),
+        })
+
+    users = pd.DataFrame(users_rows)
+    predictions = pd.DataFrame(prediction_rows)
+    if not predictions.empty:
+        predictions = predictions.sort_values("_sort_time", ascending=False).drop(columns=["_sort_time"])
+    return users, predictions
 
 # =====================================================
 # LANGUAGE
@@ -356,9 +576,122 @@ header { background:transparent !important; }
 
 
 # =====================================================
+# LOGIN / REGISTRATION
+# =====================================================
+if not st.session_state.authenticated:
+    st.markdown("""
+        <section class="hero">
+            <h1>📈 STOCK TRADING MARKET FORECASTING SYSTEM</h1>
+            <p>Login or create an account to make and save predictions.</p>
+        </section>
+    """, unsafe_allow_html=True)
+
+    login_tab, register_tab = st.tabs(["🔐 Login", "📝 Register"])
+    with login_tab:
+        with st.form("login_form"):
+            login_email = st.text_input("Email", key="login_email")
+            login_password = st.text_input("Password", type="password", key="login_password")
+            login_submit = st.form_submit_button("LOGIN", use_container_width=True)
+        if login_submit:
+            account = authenticate_user(login_email, login_password)
+            if account is None:
+                st.error("Invalid email or password.")
+            else:
+                st.session_state.authenticated = True
+                st.session_state.user_id = account["id"]
+                st.session_state.user_name = account["full_name"]
+                st.session_state.user_email = account["email"]
+                st.session_state.user_role = account["role"]
+                st.rerun()
+
+    with register_tab:
+        with st.form("register_form"):
+            register_name = st.text_input("Full name", key="register_name")
+            register_email = st.text_input("Email", key="register_email")
+            register_password = st.text_input("Password", type="password", key="register_password")
+            register_confirm = st.text_input("Confirm password", type="password", key="register_confirm")
+            register_submit = st.form_submit_button("CREATE ACCOUNT", use_container_width=True)
+        if register_submit:
+            try:
+                if register_password != register_confirm:
+                    raise ValueError("Passwords do not match.")
+                create_user(register_name, register_email, register_password)
+                st.success("Account created. Open the Login tab and sign in.")
+            except Exception as error:
+                st.error(str(error))
+
+    st.info("Admin account must have role = admin in Firestore collection users.")
+    st.stop()
+
+
+# =====================================================
+# ADMIN DASHBOARD
+# =====================================================
+if st.session_state.user_role == "admin":
+    with st.sidebar:
+        st.success(f"Admin: {st.session_state.user_name}")
+        if st.button("🚪 LOGOUT", use_container_width=True):
+            for key in ["authenticated", "user_id", "user_name", "user_email", "user_role", "prediction"]:
+                st.session_state[key] = False if key == "authenticated" else None
+            st.rerun()
+
+    st.markdown("""
+        <section class="hero">
+            <h1>🛡️ ADMIN DASHBOARD</h1>
+            <p>Registered users and predictions saved in East Africa Time.</p>
+        </section>
+    """, unsafe_allow_html=True)
+
+    users_df, predictions_df = load_admin_data()
+    total_users = len(users_df[users_df["Role"] == "user"]) if not users_df.empty else 0
+    total_predictions = len(predictions_df)
+    buy_count = int(predictions_df["Recommendation"].astype(str).str.contains("BUY").sum()) if not predictions_df.empty else 0
+    sell_count = int(predictions_df["Recommendation"].astype(str).str.contains("SELL").sum()) if not predictions_df.empty else 0
+    hold_count = int(predictions_df["Recommendation"].astype(str).str.contains("HOLD").sum()) if not predictions_df.empty else 0
+
+    st.markdown(f"""
+        <div class="card-grid">
+            <div class="metric-card"><div class="metric-icon">👥</div><div class="metric-label">Users</div><div class="metric-value">{total_users}</div></div>
+            <div class="metric-card"><div class="metric-icon">📈</div><div class="metric-label">Predictions</div><div class="metric-value">{total_predictions}</div></div>
+            <div class="metric-card"><div class="metric-icon">🟢</div><div class="metric-label">BUY</div><div class="metric-value">{buy_count}</div></div>
+            <div class="metric-card"><div class="metric-icon">🔴</div><div class="metric-label">SELL</div><div class="metric-value">{sell_count}</div></div>
+            <div class="metric-card"><div class="metric-icon">🟡</div><div class="metric-label">HOLD</div><div class="metric-value">{hold_count}</div></div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    search_admin = st.text_input("🔎 Search user, email, stock or recommendation")
+    if search_admin and not predictions_df.empty:
+        mask = predictions_df.astype(str).apply(lambda col: col.str.contains(search_admin, case=False, na=False)).any(axis=1)
+        displayed_predictions = predictions_df[mask]
+    else:
+        displayed_predictions = predictions_df
+
+    user_tab, prediction_tab = st.tabs(["👥 Registered Users", "📊 Prediction History"])
+    with user_tab:
+        st.dataframe(users_df, use_container_width=True, hide_index=True)
+    with prediction_tab:
+        st.dataframe(displayed_predictions, use_container_width=True, hide_index=True)
+        if not displayed_predictions.empty:
+            st.download_button(
+                "📥 DOWNLOAD PREDICTION HISTORY",
+                displayed_predictions.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"prediction_history_{eat_now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv; charset=utf-8",
+                use_container_width=True,
+                on_click="ignore",
+            )
+    st.stop()
+
+# =====================================================
 # SIDEBAR / SETTINGS
 # =====================================================
 with st.sidebar:
+    st.success(f"👤 {st.session_state.user_name}\n\n{st.session_state.user_email}")
+    if st.button("🚪 LOGOUT", use_container_width=True, key="user_logout"):
+        for key in ["authenticated", "user_id", "user_name", "user_email", "user_role", "prediction"]:
+            st.session_state[key] = False if key == "authenticated" else None
+        st.rerun()
+
     st.markdown(
         f"<div class='sidebar-title'><strong>⚙️ {t('controls')}</strong></div>",
         unsafe_allow_html=True,
@@ -486,24 +819,20 @@ def next_business_day(day):
     return day
 
 
-def create_forecast_times(selected_period: str, count: int, now: datetime, rng) -> list[datetime]:
+def create_forecast_times(selected_period: str, count: int, now: datetime, rng=None) -> list[datetime]:
+    """Create deterministic EAT forecast times, identical across device time zones."""
     if selected_period == "Today":
-        # Exactly 2.5 to 3 hours ahead.
-        return [now + timedelta(minutes=int(rng.integers(150, 181)))]
+        return [now + timedelta(hours=3)]
 
     if selected_period == "Tomorrow":
         day = next_business_day(now.date() + timedelta(days=1))
-        hour = int(rng.integers(10, 15))
-        minute = int(rng.integers(0, 60))
-        return [datetime.combine(day, datetime.min.time()).replace(hour=hour, minute=minute)]
+        return [datetime.combine(day, datetime.min.time(), tzinfo=EAT).replace(hour=11)]
 
     results = []
     day = now.date() + timedelta(days=1)
     while len(results) < count:
         day = next_business_day(day)
-        hour = int(rng.integers(10, 15))
-        minute = int(rng.integers(0, 60))
-        results.append(datetime.combine(day, datetime.min.time()).replace(hour=hour, minute=minute))
+        results.append(datetime.combine(day, datetime.min.time(), tzinfo=EAT).replace(hour=11))
         day += timedelta(days=1)
     return results
 
@@ -732,7 +1061,7 @@ if run_prediction:
             raise RuntimeError(t("model_missing"))
 
         scaled = scaler.transform(feature_df)
-        now = datetime.now()
+        now = eat_now()
         seed = int.from_bytes(os.urandom(8), "little")
         rng = np.random.default_rng(seed)
 
@@ -762,7 +1091,7 @@ if run_prediction:
             row_signal, row_change, row_confidence, row_reason = recommendation(price, current_price, previous, prepared_df, i, row_rng)
             rows.append({
                 t("number"): i + 1,
-                t("forecast_datetime"): forecast_dt.strftime("%d %b %Y %H:%M"),
+                t("forecast_datetime"): forecast_dt.strftime("%d %b %Y %H:%M EAT"),
                 t("price"): round(price, 2),
                 t("recommendation"): row_signal,
                 t("confidence"): f"{row_confidence}%",
@@ -786,8 +1115,8 @@ if run_prediction:
             "Value": [
                 STOCK_NAMES[stock], stock, period_label, f"{current_price:,.2f} TZS",
                 f"{final_price:,.2f} TZS", f"{final_change:+.2f}%", final_signal,
-                f"{final_confidence}%", now.strftime("%d %B %Y %H:%M:%S"),
-                forecast_time.strftime("%d %B %Y %H:%M"), final_reason,
+                f"{final_confidence}%", now.strftime("%d %B %Y %H:%M:%S EAT"),
+                forecast_time.strftime("%d %B %Y %H:%M EAT"), final_reason,
             ],
         })
 
@@ -828,6 +1157,7 @@ if run_prediction:
             "pdf_bytes": pdf_bytes,
             "zip_bytes": zip_bytes,
         }
+        save_prediction_record(st.session_state.prediction)
         st.session_state.report_open = False
     except Exception as error:
         st.error(f"Prediction error: {error}")
@@ -867,7 +1197,7 @@ else:
                 <div class="metric-icon">🕒</div>
                 <div class="metric-label">{t('forecast_time')}</div>
                 <div class="metric-value" style="font-size:1.05rem">{p['forecast_time'].strftime('%d %b %Y')}</div>
-                <div class="metric-note">{p['forecast_time'].strftime('%H:%M')}</div>
+                <div class="metric-note">{p['forecast_time'].strftime('%H:%M EAT')}</div>
             </div>
         </div>
         """,
@@ -878,8 +1208,8 @@ else:
         f"""
         <div class="result-card">
             <div class="result-grid">
-                <div class="result-item"><div class="result-label">{t('current_time')}</div><div class="result-value">{p['now'].strftime('%d %B %Y %H:%M:%S')}</div></div>
-                <div class="result-item"><div class="result-label">{t('forecast_time')}</div><div class="result-value">{p['forecast_time'].strftime('%d %B %Y %H:%M')}</div></div>
+                <div class="result-item"><div class="result-label">{t('current_time')}</div><div class="result-value">{p['now'].strftime('%d %B %Y %H:%M:%S EAT')}</div></div>
+                <div class="result-item"><div class="result-label">{t('forecast_time')}</div><div class="result-value">{p['forecast_time'].strftime('%d %B %Y %H:%M EAT')}</div></div>
                 <div class="result-item"><div class="result-label">{t('change')}</div><div class="result-value">{p['final_change']:+.2f}%</div></div>
             </div>
         </div>
